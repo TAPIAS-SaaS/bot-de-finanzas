@@ -7,7 +7,10 @@ from typing import Any, Dict, List
 from trading_bot.ai import GeminiAdvisor
 from trading_bot.backtesting import run_backtest_for_strategy
 from trading_bot.config import BotSettings, load_settings_from_env
-from trading_bot.data import generate_deterministic_market_series
+from trading_bot.data import (
+    generate_deterministic_market_series,
+    load_market_candles_for_engine,
+)
 from trading_bot.exchanges import SpotExchangeAdapter
 from trading_bot.execution import OrderExecutionEngine
 from trading_bot.forecasting import (
@@ -46,11 +49,18 @@ class TradingBotEngine:
         self.paper_running = True
         self._step_counter = 0
 
-    def run_paper_evaluation_step(self, symbol: str = "BTC/USDT") -> Dict[str, Any]:
+    def run_paper_evaluation_step(
+        self,
+        symbol: str = "BTC/USDT",
+        data_provider: str | None = None,
+    ) -> Dict[str, Any]:
         """Ejecuta un ciclo determinista de evaluación en modo Paper Trading."""
         self._step_counter += 1
-        candles_1h, candles_4h = generate_deterministic_market_series(
-            symbol=symbol, num_1h_bars=900
+        provider = data_provider or self.settings.data.provider
+        candles_1h, candles_4h = load_market_candles_for_engine(
+            symbol=symbol,
+            provider=provider,
+            num_1h_bars=900,
         )
         last_bar = candles_1h[-1]
         strategy = STRATEGY_REGISTRY[self.settings.strategy.active_strategy_id]
@@ -136,14 +146,23 @@ class TradingBotEngine:
         return {
             "signal_id": signal_id,
             "risk_decision_id": risk_id,
+            "data_source": last_bar.source,
+            "last_candle_close_utc": last_bar.close_timestamp,
             "signal": signal.to_dict(),
             "risk_decision": risk_decision.to_dict(),
             "order": order_dict,
         }
 
-    def run_comparative_backtest(self, symbol: str = "BTC/USDT") -> List[Dict[str, Any]]:
-        candles_1h, candles_4h = generate_deterministic_market_series(
-            symbol=symbol, num_1h_bars=1200
+    def run_comparative_backtest(
+        self,
+        symbol: str = "BTC/USDT",
+        data_provider: str | None = None,
+    ) -> List[Dict[str, Any]]:
+        provider = data_provider or self.settings.data.provider
+        candles_1h, candles_4h = load_market_candles_for_engine(
+            symbol=symbol,
+            provider=provider,
+            num_1h_bars=1000 if provider == "binance_public" else 1200,
         )
         reports: List[Dict[str, Any]] = []
         for strat_id in self.settings.strategy.allowed_strategies:

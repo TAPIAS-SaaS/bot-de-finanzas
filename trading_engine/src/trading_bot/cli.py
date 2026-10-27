@@ -8,7 +8,7 @@ import sys
 
 from trading_bot.api import run_stdlib_http_server
 from trading_bot.backtesting import run_backtest_for_strategy
-from trading_bot.data import generate_deterministic_market_series
+from trading_bot.data import load_market_candles_for_engine
 from trading_bot.engine import TradingBotEngine
 
 
@@ -28,9 +28,21 @@ def main(argv: list[str] | None = None) -> int:
         default="all",
         choices=["all", "trend_following_v1", "mean_reversion_v1", "range_breakout_v1"],
     )
+    bt_parser.add_argument(
+        "--provider",
+        default=None,
+        choices=["synthetic_deterministic", "binance_public"],
+        help="Fuente de velas: synthetic_deterministic o binance_public (tiempo real sin API key)",
+    )
 
     step_parser = sub.add_parser("paper-step", help="Ejecuta un ciclo de evaluación Paper Trading")
     step_parser.add_argument("--symbol", default="BTC/USDT", choices=["BTC/USDT", "ETH/USDT"])
+    step_parser.add_argument(
+        "--provider",
+        default=None,
+        choices=["synthetic_deterministic", "binance_public"],
+        help="Fuente de velas: synthetic_deterministic o binance_public (tiempo real sin API key)",
+    )
 
     serve_parser = sub.add_parser("serve", help="Inicia el servidor HTTP del motor Python")
     serve_parser.add_argument("--host", default="127.0.0.1")
@@ -44,11 +56,26 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "backtest":
+        provider = args.provider or engine.settings.data.provider
         if args.strategy == "all":
-            reports = engine.run_comparative_backtest(symbol=args.symbol)
-            print(json.dumps({"symbol": args.symbol, "reports": reports}))
+            reports = engine.run_comparative_backtest(
+                symbol=args.symbol, data_provider=provider
+            )
+            print(
+                json.dumps(
+                    {
+                        "symbol": args.symbol,
+                        "data_provider": provider,
+                        "reports": reports,
+                    }
+                )
+            )
         else:
-            c1h, c4h = generate_deterministic_market_series(symbol=args.symbol, num_1h_bars=1200)
+            c1h, c4h = load_market_candles_for_engine(
+                symbol=args.symbol,
+                provider=provider,
+                num_1h_bars=1000 if provider == "binance_public" else 1200,
+            )
             rep = run_backtest_for_strategy(
                 strategy_id=args.strategy,
                 candles_1h=c1h,
@@ -61,7 +88,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "paper-step":
-        res = engine.run_paper_evaluation_step(symbol=args.symbol)
+        res = engine.run_paper_evaluation_step(
+            symbol=args.symbol, data_provider=args.provider
+        )
         print(json.dumps(res))
         return 0
 

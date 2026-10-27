@@ -8,6 +8,7 @@ import { RiskAndLiveGateTab } from './frontend/components/RiskAndLiveGateTab';
 import type {
   AdvisorAnalysisDTO,
   BacktestReportDTO,
+  DataProviderType,
   DecisionAuditRowDTO,
   EngineStatusDTO,
   ForecastComparisonDTO,
@@ -159,6 +160,38 @@ export function App() {
       );
     } catch (err) {
       setErrorBanner(err instanceof Error ? err.message : 'Error al cambiar conectividad');
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const handleToggleDataProvider = async (provider: DataProviderType) => {
+    setIsBusy(true);
+    setErrorBanner(null);
+    setBannerNotice(null);
+    try {
+      const res = await fetch('/api/engine/data-provider', {
+        method: 'POST',
+        headers: ADMIN_HEADERS,
+        body: JSON.stringify({ provider, symbol }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.message || 'Error al cambiar el proveedor de velas');
+      }
+      setStatus(data.status);
+      setPortfolio(data.portfolio);
+      await loadDashboardData(symbol);
+      const priceLabel = data.last_signal?.reference_price
+        ? ` — Último cierre ${symbol}: $${Number(data.last_signal.reference_price).toLocaleString('es-CO')} USDT`
+        : '';
+      setBannerNotice(
+        provider === 'binance_public'
+          ? `Conectado a Velas Públicas en Tiempo Real (Binance Spot REST 1h/4h sin API Key)${priceLabel}`
+          : `Fuente restaurada a Serie Determinista Reproducible Offline (1.200h)${priceLabel}`
+      );
+    } catch (err) {
+      setErrorBanner(err instanceof Error ? err.message : 'Error al cambiar fuente de velas');
     } finally {
       setIsBusy(false);
     }
@@ -368,6 +401,7 @@ export function App() {
         <ModeBanner
           status={status}
           onToggleConnectivity={handleToggleConnectivity}
+          onToggleDataProvider={handleToggleDataProvider}
           onTriggerKillSwitch={() => {
             handleActivateKillSwitch('Activación rápida desde barra superior del terminal');
           }}

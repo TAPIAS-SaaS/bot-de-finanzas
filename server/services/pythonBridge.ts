@@ -12,6 +12,7 @@ import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import type {
   BacktestReportDTO,
+  DataProviderType,
   ForecastComparisonDTO,
   PortfolioSummaryDTO,
   RiskDecisionDTO,
@@ -28,6 +29,8 @@ export class PythonEngineBridge {
   private killSwitchReason = '';
   private activeStrategyId = 'trend_following_v1';
   private primarySymbol = 'BTC/USDT';
+  private dataProvider: DataProviderType =
+    process.env.DATA_PROVIDER === 'binance_public' ? 'binance_public' : 'synthetic_deterministic';
   private cachedBacktests: Map<string, BacktestReportDTO[]> = new Map();
   private lastSignalBySymbol: Map<string, StrategySignalDTO> = new Map();
   private openPositions: Map<string, VirtualPositionDTO> = new Map();
@@ -54,7 +57,12 @@ export class PythonEngineBridge {
       ...process.env,
       PYTHONPATH: path.resolve(process.cwd(), 'trading_engine/src'),
       SQLITE_DB_PATH: this.auditRepo.dbPath,
+      DATA_PROVIDER: this.dataProvider,
     };
+  }
+
+  private cacheKey(symbol: string, provider = this.dataProvider): string {
+    return `${provider}:${symbol}`;
   }
 
   private bootstrapInitialState(): void {
@@ -76,6 +84,21 @@ export class PythonEngineBridge {
       return 'demo';
     }
     return 'paper';
+  }
+
+  public getDataProvider(): DataProviderType {
+    return this.dataProvider;
+  }
+
+  public setDataProvider(provider: DataProviderType): void {
+    this.dataProvider = provider;
+    this.auditRepo.logAuditEvent(
+      'INFO',
+      'DATA_PROVIDER',
+      provider === 'binance_public'
+        ? 'Fuente de datos cambiada a Velas Públicas en Tiempo Real (Binance Spot REST 1h/4h sin API Key).'
+        : 'Fuente de datos cambiada a Serie Determinista Reproducible Offline (1.200h).'
+    );
   }
 
   public isPythonConnected(): boolean {
@@ -153,12 +176,23 @@ export class PythonEngineBridge {
   }
 
   public runBacktestComparison(symbol: 'BTC/USDT' | 'ETH/USDT' = 'BTC/USDT'): BacktestReportDTO[] {
+    const key = this.cacheKey(symbol);
     if (!this.pythonConnected) {
-      return this.cachedBacktests.get(symbol) || [];
+      return this.cachedBacktests.get(key) || [];
     }
     const rawOut = execFileSync(
       'python3',
-      ['-m', 'trading_bot.cli', 'backtest', '--symbol', symbol, '--strategy', 'all'],
+      [
+        '-m',
+        'trading_bot.cli',
+        'backtest',
+        '--symbol',
+        symbol,
+        '--strategy',
+        'all',
+        '--provider',
+        this.dataProvider,
+      ],
       {
         env: this.pythonEnv,
         encoding: 'utf-8',
@@ -166,12 +200,13 @@ export class PythonEngineBridge {
       }
     );
     const parsed = JSON.parse(rawOut) as { symbol: string; reports: BacktestReportDTO[] };
-    this.cachedBacktests.set(symbol, parsed.reports);
+    this.cachedBacktests.set(key, parsed.reports);
     return parsed.reports;
   }
 
   public getCachedOrRunBacktests(symbol: 'BTC/USDT' | 'ETH/USDT' = 'BTC/USDT'): BacktestReportDTO[] {
-    const existing = this.cachedBacktests.get(symbol);
+    const key = this.cacheKey(symbol);
+    const existing = this.cachedBacktests.get(key);
     if (existing && existing.length > 0) {
       return existing;
     }
@@ -181,6 +216,8 @@ export class PythonEngineBridge {
   public runPaperStep(symbol: 'BTC/USDT' | 'ETH/USDT' = 'BTC/USDT'): {
     signal_id: string;
     risk_decision_id: string;
+    data_source?: string;
+    last_candle_close_utc?: number;
     signal: StrategySignalDTO;
     risk_decision: RiskDecisionDTO;
     order: Record<string, unknown> | null;
@@ -198,30 +235,40 @@ export class PythonEngineBridge {
 
     const rawOut = execFileSync(
       'python3',
-      ['-m', 'trading_bot.cli', 'paper-step', '--symbol', symbol],
+      [
+        '-m',
+        'trading_bot.cli',
+        'paper-step',
+        '--symbol',
+        symbol,
+        '--provider',
+        this.dataProvider,
+      ],
       {
         env: {
           ...this.pythonEnv,
           ACTIVE_STRATEGY_ID: this.activeStrategyId,
         },
         encoding: 'utf-8',
-        timeout: 15_000,
+        timeout: 20_000,
       }
     );
     const parsed = JSON.parse(rawOut) as {
       signal_id: string;
       risk_decision_id: string;
+      data_source?: string;
+      last_candle_close_utc?: number;
       signal: StrategySignalDTO;
       risk_decision: RiskDecisionDTO;
       order: Record<string, unknown> | null;
     };
-    this.lastSignalBySymbol.set(symbol, parsed.signal);
+    this.lastSignalBySymbol.set(this.cacheKey(symbol), parsed.signal);
     this.primarySymbol = symbol;
     return parsed;
   }
 
   public getLastSignal(symbol = 'BTC/USDT'): StrategySignalDTO {
-    const cached = this.lastSignalBySymbol.get(symbol);
+    const cached = this.lastSignalBySymbol.get(this.cacheKey(symbol));
     if (cached) return cached;
     return {
       symbol,
@@ -246,7 +293,7 @@ export class PythonEngineBridge {
   }
 
   public getPortfolioSummary(): PortfolioSummaryDTO {
-    const reports = this.getCachedOrRunBacktests('BTC/USDT');
+    const reports = this.getCachedOrRunBacktests(this.primarySymbol as 'BTC/USDT' | 'ETH/USDT');
     const activeReport =
       reports.find((r) => r.strategy_id === this.activeStrategyId) || reports[0];
 
@@ -264,9 +311,11 @@ export class PythonEngineBridge {
 
     return {
       mode: this.getEffectiveMode(),
-      data_source_label: this.pythonConnected
-        ? 'Simulación determinista verificada (Motor Python 3.10 + SQLite)'
-        : 'Modo Demostración — Motor Python desconectado',
+      data_source_label: !this.pythonConnected
+        ? 'Modo Demostración — Motor Python desconectado'
+        : this.dataProvider === 'binance_public'
+          ? 'Velas Públicas en Tiempo Real — Binance Spot REST (1h/4h sin API Key)'
+          : 'Simulación determinista verificada (Motor Python 3.10 + SQLite)',
       initial_capital_cop: this.initialCapitalCop,
       reference_cop_per_usdt: this.referenceCopPerUsdt,
       initial_equity_usdt: initEq,

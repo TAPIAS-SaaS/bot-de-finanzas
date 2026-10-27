@@ -223,6 +223,9 @@ def load_settings_from_env(env: dict | None = None) -> BotSettings:
             default_fee_rate=float(source.get("DEFAULT_FEE_RATE", "0.001")),
             default_slippage_rate=float(source.get("DEFAULT_SLIPPAGE_RATE", "0.0005")),
         ),
+        data=DataConfig(
+            provider=source.get("DATA_PROVIDER", "synthetic_deterministic").strip().lower(),
+        ),
         timesfm=TimesFMConfig(
             enabled=_parse_bool(source.get("ENABLE_TIMESFM"), False),
             model_version=source.get("TIMESFM_MODEL_VERSION", "timesfm-2.5-200m"),

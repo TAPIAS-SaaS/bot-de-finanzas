@@ -56,6 +56,7 @@ export function createApiRouter(deps?: {
 
     return {
       effective_mode: bridge.getEffectiveMode(),
+      data_provider: bridge.getDataProvider(),
       python_engine_connected: bridge.isPythonConnected(),
       python_engine_transport: bridge.isPythonConnected()
         ? 'python3_subprocess_bridge'
@@ -335,6 +336,37 @@ export function createApiRouter(deps?: {
     const connected = Boolean(req.body?.connected);
     bridge.setPythonConnectivity(connected);
     return res.json(buildStatusPayload());
+  });
+
+  router.post('/engine/data-provider', requireAdminAuth, (req, res) => {
+    const rawProvider = req.body?.provider;
+    if (rawProvider !== 'binance_public' && rawProvider !== 'synthetic_deterministic') {
+      return res.status(400).json({
+        error: 'INVALID_DATA_PROVIDER',
+        message: 'El proveedor debe ser "binance_public" o "synthetic_deterministic".',
+      });
+    }
+    const targetSymbol = req.body?.symbol === 'ETH/USDT' ? 'ETH/USDT' : 'BTC/USDT';
+    try {
+      bridge.setDataProvider(rawProvider);
+      if (bridge.isPythonConnected()) {
+        bridge.runBacktestComparison(targetSymbol);
+        bridge.runPaperStep(targetSymbol);
+      }
+      return res.json({
+        status: buildStatusPayload(),
+        portfolio: bridge.getPortfolioSummary(),
+        last_signal: bridge.getLastSignal(targetSymbol),
+      });
+    } catch (err) {
+      return res.status(503).json({
+        error: 'DATA_PROVIDER_SWITCH_FAILED',
+        message:
+          err instanceof Error
+            ? err.message
+            : 'No fue posible conectar con el proveedor de velas solicitado.',
+      });
+    }
   });
 
   router.get('/export/:format', (req, res) => {

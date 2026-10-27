@@ -1,11 +1,12 @@
 import React from 'react';
-import { AlertTriangle, ShieldAlert, ShieldCheck, Unplug } from 'lucide-react';
-import type { EngineStatusDTO } from '../../shared/types';
+import { AlertTriangle, Radio, ShieldAlert, ShieldCheck, Unplug } from 'lucide-react';
+import type { DataProviderType, EngineStatusDTO } from '../../shared/types';
 import { formatUtcTimestamp, getModeDescriptor } from '../utils/formatters';
 
 interface ModeBannerProps {
   status: EngineStatusDTO;
   onToggleConnectivity: (connected: boolean) => void;
+  onToggleDataProvider: (provider: DataProviderType) => void;
   onTriggerKillSwitch: () => void;
   isBusy: boolean;
 }
@@ -13,10 +14,12 @@ interface ModeBannerProps {
 export const ModeBanner: React.FC<ModeBannerProps> = ({
   status,
   onToggleConnectivity,
+  onToggleDataProvider,
   onTriggerKillSwitch,
   isBusy,
 }) => {
   const descriptor = getModeDescriptor(status.effective_mode, status.python_engine_connected);
+  const isLivePublicFeed = status.data_provider === 'binance_public';
 
   return (
     <section
@@ -43,7 +46,17 @@ export const ModeBanner: React.FC<ModeBannerProps> = ({
           <span aria-hidden="true" className="text-slate-600">
             ·
           </span>
-          <span className="text-xs text-slate-300">{descriptor.warningText}</span>
+          <span
+            data-testid="data-provider-indicator"
+            className={`inline-flex items-center gap-1.5 font-mono text-xs font-medium ${
+              isLivePublicFeed ? 'text-sky-400' : 'text-slate-300'
+            }`}
+          >
+            <Radio className="h-3.5 w-3.5 shrink-0" />
+            {isLivePublicFeed
+              ? 'Feed: Velas Públicas Tiempo Real (Binance Spot 1h/4h)'
+              : 'Feed: Serie Determinista Reproducible (Offline)'}
+          </span>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
@@ -53,6 +66,25 @@ export const ModeBanner: React.FC<ModeBannerProps> = ({
           <span aria-hidden="true" className="text-slate-600">
             ·
           </span>
+          <button
+            type="button"
+            disabled={isBusy || !status.python_engine_connected}
+            onClick={() =>
+              onToggleDataProvider(
+                isLivePublicFeed ? 'synthetic_deterministic' : 'binance_public'
+              )
+            }
+            className={`rounded-md border px-3 py-1.5 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 disabled:opacity-50 ${
+              isLivePublicFeed
+                ? 'border-sky-500/50 bg-sky-950/70 text-sky-200 hover:bg-sky-900/70'
+                : 'border-emerald-500/40 bg-emerald-950/50 text-emerald-200 hover:bg-emerald-900/60'
+            }`}
+          >
+            {isLivePublicFeed
+              ? 'Volver a Serie Determinista Offline'
+              : 'Conectar Velas Públicas en Tiempo Real (Binance)'}
+          </button>
+
           <button
             type="button"
             disabled={isBusy}
@@ -84,3 +116,4 @@ export const ModeBanner: React.FC<ModeBannerProps> = ({
     </section>
   );
 };
+

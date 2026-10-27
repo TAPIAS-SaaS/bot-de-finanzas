@@ -214,8 +214,11 @@ export interface DecisionAuditRowDTO {
   fill_price: number | null;
 }
 
+export type DataProviderType = 'binance_public' | 'synthetic_deterministic';
+
 export interface EngineStatusDTO {
   effective_mode: TradingMode;
+  data_provider: DataProviderType;
   python_engine_connected: boolean;
   python_engine_transport: 'python3_subprocess_bridge' | 'disconnected_demo';
   paper_trading_active: boolean;

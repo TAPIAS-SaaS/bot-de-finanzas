@@ -195,3 +195,109 @@ def generate_deterministic_market_series(
         )
 
     return candles_1h, candles_4h
+
+
+BINANCE_PUBLIC_ENDPOINTS = (
+    "https://data-api.binance.vision/api/v3/klines",
+    "https://api.binance.com/api/v3/klines",
+)
+
+
+def fetch_binance_public_candles(
+    symbol: str = "BTC/USDT",
+    timeframe: str = "1h",
+    limit: int = 1000,
+    timeout_seconds: float = 8.0,
+) -> List[Candle]:
+    """Descarga velas históricas y recientes del mercado Spot público de Binance sin API Key.
+
+    Filtra automáticamente la vela en formación (`close_time > now_utc`) marcándola
+    como `is_closed=False` y devuelve la serie validada de velas cerradas.
+    """
+    import json
+    import time
+    import urllib.parse
+    import urllib.request
+
+    step = TIMEFRAME_SECONDS.get(timeframe)
+    if step is None:
+        raise DataIntegrityError(f"Timeframe no soportado para descarga pública: {timeframe}")
+
+    binance_symbol = symbol.replace("/", "").upper()
+    clamped_limit = max(50, min(1000, int(limit)))
+    query = urllib.parse.urlencode(
+        {"symbol": binance_symbol, "interval": timeframe, "limit": clamped_limit}
+    )
+
+    raw_rows = None
+    last_error: Exception | None = None
+    for base_url in BINANCE_PUBLIC_ENDPOINTS:
+        url = f"{base_url}?{query}"
+        try:
+            req = urllib.request.Request(
+                url,
+                headers={
+                    "User-Agent": "BotDeFinanzas-SpotQuant/1.0",
+                    "Accept": "application/json",
+                },
+            )
+            with urllib.request.urlopen(req, timeout=timeout_seconds) as resp:
+                raw_rows = json.loads(resp.read().decode("utf-8"))
+                if isinstance(raw_rows, list) and len(raw_rows) > 0:
+                    break
+        except Exception as exc:  # noqa: BLE001
+            last_error = exc
+            continue
+
+    if not raw_rows or not isinstance(raw_rows, list):
+        raise DataIntegrityError(
+            f"No fue posible descargar velas públicas de Binance para {symbol} ({timeframe}): {last_error}"
+        )
+
+    now_sec = int(time.time())
+    parsed_candles: List[Candle] = []
+    for row in raw_rows:
+        open_ts = int(row[0]) // 1000
+        close_ts = open_ts + step
+        is_closed = close_ts <= now_sec
+        parsed_candles.append(
+            Candle(
+                timestamp=open_ts,
+                close_timestamp=close_ts,
+                symbol=symbol,
+                timeframe=timeframe,
+                open=float(row[1]),
+                high=float(row[2]),
+                low=float(row[3]),
+                close=float(row[4]),
+                volume=float(row[5]),
+                is_closed=is_closed,
+                source="binance_public_rest",
+            )
+        )
+
+    return validate_candles(parsed_candles, expected_timeframe=timeframe, require_closed_only=True)
+
+
+def load_market_candles_for_engine(
+    symbol: str = "BTC/USDT",
+    provider: str = "synthetic_deterministic",
+    num_1h_bars: int = 1000,
+) -> Tuple[List[Candle], List[Candle]]:
+    """Carga velas cerradas 1h y 4h según el proveedor configurado (`binance_public` o `synthetic_deterministic`)."""
+    normalized = provider.strip().lower()
+    if normalized in ("binance_public", "ccxt_public", "live_public"):
+        c1h = fetch_binance_public_candles(
+            symbol=symbol,
+            timeframe="1h",
+            limit=min(1000, max(250, num_1h_bars)),
+        )
+        c4h = fetch_binance_public_candles(
+            symbol=symbol,
+            timeframe="4h",
+            limit=min(1000, max(250, (num_1h_bars // 4) + 210)),
+        )
+        return c1h, c4h
+
+    return generate_deterministic_market_series(symbol=symbol, num_1h_bars=num_1h_bars)
+
