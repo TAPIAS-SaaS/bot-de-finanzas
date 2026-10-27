@@ -1,0 +1,6 @@
+{
+  "name": "Bot de Finanzas — Terminal Cuantitativo y Gestión de Riesgo",
+  "description": "Sistema autónomo de investigación cuantitativa, backtesting reproducible, paper trading en criptomonedas spot (BTC/USDT, ETH/USDT), pronósticos experimentales TimesFM y asesoría estructurada con Gemini bajo control determinista de riesgo.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
