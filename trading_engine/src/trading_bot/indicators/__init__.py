@@ -105,3 +105,95 @@ def calculate_donchian_channel(
     lower = min(c.low for c in prior_window)
     mid = (upper + lower) / 2.0
     return (upper, lower, mid)
+
+
+def calculate_rsi(closes: List[float], period: int = 14) -> Optional[float]:
+    """Calcula el RSI suavizado de Wilder (0 a 100) sobre precios de cierre."""
+    if period <= 0 or len(closes) < period + 1:
+        return None
+    tail = closes[-(period * 3 + 5) :]
+    gains: List[float] = []
+    losses: List[float] = []
+    for i in range(1, len(tail)):
+        delta = tail[i] - tail[i - 1]
+        if math.isnan(delta) or math.isinf(delta):
+            return None
+        gains.append(max(0.0, delta))
+        losses.append(max(0.0, -delta))
+
+    avg_gain = sum(gains[:period]) / period
+    avg_loss = sum(losses[:period]) / period
+    for idx in range(period, len(gains)):
+        avg_gain = (avg_gain * (period - 1) + gains[idx]) / period
+        avg_loss = (avg_loss * (period - 1) + losses[idx]) / period
+
+    if avg_loss <= 1e-12:
+        return 100.0 if avg_gain > 0 else 50.0
+    rs = avg_gain / avg_loss
+    return 100.0 - (100.0 / (1.0 + rs))
+
+
+def calculate_adx(candles: List[Candle], period: int = 14) -> Optional[float]:
+    """Calcula el Average Directional Index (ADX) de Wilder para filtrar mercados laterales sin fuerza."""
+    if period <= 0 or len(candles) < (period * 2 + 1):
+        return None
+    tail_raw = candles[-(period * 3 + 10) :]
+    closed = [c for c in tail_raw if c.is_closed]
+    if len(closed) < (period * 2 + 1):
+        return None
+
+    tr_list: List[float] = []
+    plus_dm_list: List[float] = []
+    minus_dm_list: List[float] = []
+
+    for i in range(1, len(closed)):
+        curr = closed[i]
+        prev = closed[i - 1]
+        up_move = curr.high - prev.high
+        down_move = prev.low - curr.low
+        plus_dm = up_move if (up_move > down_move and up_move > 0) else 0.0
+        minus_dm = down_move if (down_move > up_move and down_move > 0) else 0.0
+        tr = max(
+            curr.high - curr.low,
+            abs(curr.high - prev.close),
+            abs(curr.low - prev.close),
+        )
+        tr_list.append(tr)
+        plus_dm_list.append(plus_dm)
+        minus_dm_list.append(minus_dm)
+
+    sm_tr = sum(tr_list[:period])
+    sm_plus = sum(plus_dm_list[:period])
+    sm_minus = sum(minus_dm_list[:period])
+
+    dx_values: List[float] = []
+    for idx in range(period, len(tr_list)):
+        if idx > period:
+            sm_tr = sm_tr - (sm_tr / period) + tr_list[idx]
+            sm_plus = sm_plus - (sm_plus / period) + plus_dm_list[idx]
+            sm_minus = sm_minus - (sm_minus / period) + minus_dm_list[idx]
+        if sm_tr <= 1e-12:
+            dx_values.append(0.0)
+            continue
+        plus_di = 100.0 * (sm_plus / sm_tr)
+        minus_di = 100.0 * (sm_minus / sm_tr)
+        denom = plus_di + minus_di
+        dx = 100.0 * abs(plus_di - minus_di) / denom if denom > 1e-12 else 0.0
+        dx_values.append(dx)
+
+    if len(dx_values) < period:
+        return None
+    adx = sum(dx_values[:period]) / period
+    for d in dx_values[period:]:
+        adx = (adx * (period - 1) + d) / period
+    return adx
+
+
+def calculate_candle_efficiency(candle: Candle) -> float:
+    """Devuelve la eficiencia de cierre (0.0 a 1.0) dentro del rango total de la vela."""
+    span = candle.high - candle.low
+    if span <= 1e-12:
+        return 0.5
+    return max(0.0, min(1.0, (candle.close - candle.low) / span))
+
+

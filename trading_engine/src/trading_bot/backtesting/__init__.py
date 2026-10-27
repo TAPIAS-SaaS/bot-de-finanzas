@@ -159,12 +159,16 @@ def run_backtest_for_strategy(
             total_cost = qty * fill_price + entry_fee
             if total_cost <= cash_usdt and fill_price > pending_entry["stop"]:
                 cash_usdt -= total_cost
+                init_risk_per_unit = max(fill_price - pending_entry["stop"], fill_price * 0.004)
                 open_pos = {
                     "qty": qty,
                     "entry_price": fill_price,
                     "entry_ts": float(bar.timestamp),
                     "signal_ts": pending_entry["signal_ts"],
                     "stop": pending_entry["stop"],
+                    "initial_stop": pending_entry["stop"],
+                    "risk_r": init_risk_per_unit,
+                    "highest_close": fill_price,
                     "tp": pending_entry["tp"],
                     "entry_fee": entry_fee,
                 }
@@ -210,7 +214,11 @@ def run_backtest_for_strategy(
                 if stop_hit:
                     raw_exit = min(bar.open, open_pos["stop"])
                     exit_price = round(raw_exit * (1.0 - risk_config.default_slippage_rate), 2)
-                    reason = "STOP_LOSS_CONSERVATIVE"
+                    reason = (
+                        "TRAILING_PROFIT_LOCK"
+                        if open_pos["stop"] > open_pos["entry_price"]
+                        else "STOP_LOSS_CONSERVATIVE"
+                    )
                 else:
                     raw_exit = open_pos["tp"]
                     exit_price = round(raw_exit * (1.0 - risk_config.default_slippage_rate), 2)
@@ -244,6 +252,20 @@ def run_backtest_for_strategy(
                 )
                 open_pos = None
                 pending_exit_signal = False
+            else:
+                # 2b. Actualización de Trailing Stop y Break-Even al CIERRE de la vela (aplica desde la vela siguiente, cero look-ahead)
+                open_pos["highest_close"] = max(open_pos["highest_close"], bar.close)
+                gain_per_unit = open_pos["highest_close"] - open_pos["entry_price"]
+                r_unit = open_pos["risk_r"]
+                if strategy_id != "trend_following_v1" and gain_per_unit >= 1.35 * r_unit:
+                    be_stop = round(open_pos["entry_price"] * 1.0030, 2)
+                    open_pos["stop"] = max(open_pos["stop"], be_stop)
+                if gain_per_unit >= 2.60 * r_unit:
+                    trail_stop = round(
+                        open_pos["entry_price"] + 0.65 * gain_per_unit,
+                        2,
+                    )
+                    open_pos["stop"] = max(open_pos["stop"], trail_stop)
 
         # 3. Actualizar patrimonio al cierre de la vela `idx`
         pos_market_value = open_pos["qty"] * bar.close if open_pos else 0.0

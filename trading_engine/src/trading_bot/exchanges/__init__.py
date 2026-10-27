@@ -112,3 +112,70 @@ class SpotExchangeAdapter:
             checks=checks,
             blocking_reasons=reasons,
         )
+
+    def verify_binance_spot_account(
+        self,
+        api_key: str,
+        api_secret: str,
+        use_testnet: bool = False,
+        timeout_seconds: float = 8.0,
+    ) -> Dict[str, object]:
+        """Verifica firma HMAC-SHA256 contra `/api/v3/account` de Binance Spot (sin exponer claves).
+
+        Comprueba que la cuenta permita operar en Spot (`canTrade=True`) y lee el saldo libre de USDT.
+        """
+        import hashlib
+        import hmac
+        import json
+        import time
+        import urllib.parse
+        import urllib.request
+
+        if not api_key.strip() or not api_secret.strip():
+            raise PermissionError(
+                "Faltan credenciales completas: se requieren TANTO EXCHANGE_API_KEY como EXCHANGE_API_SECRET para firmar con HMAC-SHA256."
+            )
+
+        base_url = (
+            "https://testnet.binance.vision/api/v3/account"
+            if use_testnet
+            else "https://api.binance.com/api/v3/account"
+        )
+        params = {
+            "timestamp": int(time.time() * 1000),
+            "recvWindow": 5000,
+        }
+        query_string = urllib.parse.urlencode(params)
+        signature = hmac.new(
+            api_secret.strip().encode("utf-8"),
+            query_string.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+
+        full_url = f"{base_url}?{query_string}&signature={signature}"
+        req = urllib.request.Request(
+            full_url,
+            headers={
+                "X-MBX-APIKEY": api_key.strip(),
+                "User-Agent": "BotDeFinanzas-SpotQuant/1.1",
+                "Accept": "application/json",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=timeout_seconds) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+
+        balances = payload.get("balances", [])
+        usdt_free = 0.0
+        for b in balances:
+            if b.get("asset") == "USDT":
+                usdt_free = float(b.get("free", 0.0))
+                break
+
+        return {
+            "can_trade": bool(payload.get("canTrade", False)),
+            "can_withdraw": bool(payload.get("canWithdraw", False)),
+            "account_type": payload.get("accountType", "SPOT"),
+            "usdt_free_balance": usdt_free,
+            "testnet": use_testnet,
+        }
+
