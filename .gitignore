@@ -20,9 +20,9 @@ server.js
 *.db
 *.db-shm
 *.db-wal
-data/
-reports/private/
-exports/
+/data/
+/reports/private/
+/exports/
 
 # Entornos virtuales y artefactos de Python
 __pycache__/
@@ -49,6 +49,7 @@ models/weights/
 logs/
 .DS_Store
 .playwright-cli/
+.aistudio/
 public/assets/aistudio/
 tmp/
 temp/
