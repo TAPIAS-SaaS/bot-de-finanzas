@@ -179,7 +179,10 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
               {status.active_strategy_id}
             </p>
             <p className="mt-1 font-mono text-xs text-slate-400">
-              Riesgo: {status.kill_switch_active ? 'BLOQUEADO (Kill Switch)' : 'ACTIVO (0.5% máx/op)'}
+              Riesgo:{' '}
+              {status.kill_switch_active
+                ? 'BLOQUEADO (Kill Switch)'
+                : `ACTIVO (${(status.risk_limits.max_risk_per_trade * 100).toFixed(2)}% máx/op · Exp ${(status.risk_limits.max_exposure * 100).toFixed(0)}%)`}
             </p>
           </div>
         </div>

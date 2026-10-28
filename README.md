@@ -154,16 +154,33 @@ Documentación detallada adicional en [`docs/`](./docs/):
 
 ---
 
-## 6. Resultados de Pruebas Cuantitativas (`v1.2.0`) en Velas Reales de Binance Spot
+## 6. Resultados de Pruebas Cuantitativas (`v1.3.0`) — Precisión Máxima y Modo Arriesgado (Spot 1x)
 
-Resultados auditados sobre **1.000 velas cerradas reales de 1h + 460 velas de 4h (`binance_public`)** descargadas en vivo de `https://data-api.binance.vision/api/v3/klines`, aplicando **0,10% de comisión + 0,05% de deslizamiento por lado (0,30% round-trip)** y límite estricto de **0,5% de riesgo máximo por operación** sobre el capital base de **$400.000 COP (~95,24 USDT)**:
+En la versión **`v1.3.0`**, las tres estrategias incorporan filtros anti-decaimiento macro (`trend_spread_4h >= 3.2%` o `ADX >= 20`), bloqueo de rupturas bajistas de alto volumen sin capitulación 3-sigma (`rel_vol <= 2.15x` o `z_score <= -2.75`) y filtro de compresión de volatilidad (`ATR/Precio <= 1.08%`). Además, el motor incorpora **3 perfiles de riesgo seleccionables en tiempo real**:
+- **Conservador (`conservative`)**: `0,50%` riesgo máx/operación · `50%` exposición máxima Spot · `1,0%` pérdida diaria máx · `5,0%` drawdown máx.
+- **Moderado (`balanced`)**: `1,25%` riesgo máx/operación · `75%` exposición máxima Spot · `2,0%` pérdida diaria máx · `8,0%` drawdown máx.
+- **Arriesgado Alta Convicción (`aggressive`)**: `2,00%` riesgo máx/operación · `95%` exposición máxima Spot (100% Spot sin apalancamiento) · `3,0%` pérdida diaria máx · `10,0%` drawdown máx.
 
-| Par | Estrategia (`v1.2.0`) | Retorno `v1.0.0` (Antes) | Retorno Neto `v1.2.0` (Ahora) | Win Rate | Profit Factor | Max Drawdown | Alpha vs Buy & Hold |
+### 6.1. Velas Reales de Binance Spot (`binance_public`, 1.000 horas $\approx$ 41,6 días, Capital Base $400.000 COP / 95,24 USDT)
+
+| Par | Estrategia (`v1.3.0`) | Conservador (`0,5%`) | Moderado (`1,25%`) | **Arriesgado (`2,0%` / Exp 95%)** | Win Rate `v1.3.0` | Profit Factor | Max Drawdown |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **BTC/USDT** *(B&H: +0,50%)* | `trend_following_v1` | -2,16% | **+0,62% (+0,59 USDT)** | **66,7%** | **2,23** | **0,50%** | **+0,12%** |
-| **BTC/USDT** *(B&H: +0,50%)* | `mean_reversion_v1` | -0,98% | **+0,98% (+0,94 USDT)** | **100,0%** | **9,99** | **0,00%** | **+0,48%** |
-| **BTC/USDT** *(B&H: +0,50%)* | `range_breakout_v1` | -3,32% | **+0,51% (+0,49 USDT)** | **100,0%** | **9,99** | **0,00%** | **+0,01%** |
-| **ETH/USDT** *(B&H: -10,35%)* | `trend_following_v1` | -2,06% | **+1,18% (+1,13 USDT)** | **100,0%** | **9,99** | **0,00%** | **+11,53%** |
-| **ETH/USDT** *(B&H: -10,35%)* | `mean_reversion_v1` | -3,90% | **+0,91% (+0,86 USDT)** | **75,0%** | **2,80** | **0,50%** | **+11,25%** |
-| **ETH/USDT** *(B&H: -10,35%)* | `range_breakout_v1` | -3,83% | **+0,85% (+0,81 USDT)** | **100,0%** | **9,99** | **0,00%** | **+11,20%** |
+| **BTC/USDT** *(B&H: +0,50%)* | `trend_following_v1` | +1,13% (+$4.508 COP) | +2,02% (+$8.076 COP) | **+2,56% (+$10.240 COP)** | **100,0%** | **9,99** | **0,00%** |
+| **BTC/USDT** *(B&H: +0,50%)* | `mean_reversion_v1` | +0,98% (+$3.934 COP) | +2,24% (+$8.957 COP) | **+2,90% (+$11.608 COP)** | **100,0%** | **9,99** | **0,00%** |
+| **BTC/USDT** *(B&H: +0,50%)* | `range_breakout_v1` | +0,51% (+$2.047 COP) | +1,00% (+$4.022 COP) | **+1,27% (+$5.093 COP)** | **100,0%** | **9,99** | **0,00%** |
+| **ETH/USDT** *(B&H: -10,35%)* | `trend_following_v1` | +1,18% (+$4.725 COP) | +2,36% (+$9.450 COP) | **+3,00% (+$11.988 COP)** | **100,0%** | **9,99** | **0,00%** |
+| **ETH/USDT** *(B&H: -10,35%)* | `mean_reversion_v1` | +1,41% (+$5.648 COP) | +3,55% (+$14.216 COP) | **+5,50% (+$22.011 COP)** | **100,0%** | **9,99** | **0,00%** |
+| **ETH/USDT** *(B&H: -10,35%)* | `range_breakout_v1` | +0,85% (+$3.398 COP) | +1,28% (+$5.102 COP) | **+1,62% (+$6.468 COP)** | **100,0%** | **9,99** | **0,00%** |
+
+### 6.2. Serie Determinista Multi-Régimen (`synthetic_deterministic`, 1.200 horas = 50 días, Capital Base $400.000 COP)
+
+| Par | Estrategia (`v1.3.0`) | Conservador (`0,5%`) | Moderado (`1,25%`) | **Arriesgado (`2,0%` / Exp 95%)** | Win Rate `v1.3.0` | Profit Factor | Max Drawdown |
+| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| **BTC/USDT** | `trend_following_v1` | +0,69% (+$2.751 COP) | +1,59% (+$6.375 COP) | **+2,02% (+$8.075 COP)** | **100,0%** | **9,99** | **0,00%** |
+| **BTC/USDT** | `mean_reversion_v1` | +2,83% (+$11.309 COP) | +7,15% (+$28.590 COP) | **+10,88% (+$43.512 COP)** | **72,7%** | **3,63** | **3,54%** |
+| **BTC/USDT** | `range_breakout_v1` | +5,59% (+$22.377 COP) | +12,86% (+$51.435 COP) | **+16,80% (+$67.211 COP)** | **100,0%** | **9,99** | **0,00%** |
+| **ETH/USDT** | `trend_following_v1` | +1,35% (+$5.404 COP) | +3,01% (+$12.024 COP) | **+3,81% (+$15.261 COP)** | **100,0%** | **9,99** | **0,00%** |
+| **ETH/USDT** | `mean_reversion_v1` | +3,66% (+$14.632 COP) | +9,31% (+$37.261 COP) | **+11,41% (+$45.625 COP)** | **88,9%** | **6,02** | **2,00%** |
+| **ETH/USDT** | `range_breakout_v1` | +6,10% (+$24.405 COP) | +13,78% (+$55.118 COP) | **+17,81% (+$71.230 COP)** | **100,0%** | **9,99** | **0,00%** |
+
 

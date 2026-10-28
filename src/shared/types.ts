@@ -215,10 +215,12 @@ export interface DecisionAuditRowDTO {
 }
 
 export type DataProviderType = 'binance_public' | 'synthetic_deterministic';
+export type RiskProfileType = 'conservative' | 'balanced' | 'aggressive';
 
 export interface EngineStatusDTO {
   effective_mode: TradingMode;
   data_provider: DataProviderType;
+  risk_profile: RiskProfileType;
   python_engine_connected: boolean;
   python_engine_transport: 'python3_subprocess_bridge' | 'disconnected_demo';
   paper_trading_active: boolean;

@@ -14,6 +14,7 @@ import type {
   ForecastComparisonDTO,
   PortfolioSummaryDTO,
   RiskDecisionDTO,
+  RiskProfileType,
   VirtualPositionDTO,
 } from './shared/types';
 
@@ -192,6 +193,36 @@ export function App() {
       );
     } catch (err) {
       setErrorBanner(err instanceof Error ? err.message : 'Error al cambiar fuente de velas');
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const handleChangeRiskProfile = async (riskProfile: RiskProfileType) => {
+    setIsBusy(true);
+    setErrorBanner(null);
+    setBannerNotice(null);
+    try {
+      const res = await fetch('/api/engine/risk-profile', {
+        method: 'POST',
+        headers: ADMIN_HEADERS,
+        body: JSON.stringify({ risk_profile: riskProfile, symbol }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.message || 'Error al cambiar el perfil de riesgo');
+      }
+      setStatus(data.status);
+      setPortfolio(data.portfolio);
+      await loadDashboardData(symbol);
+      const labels: Record<RiskProfileType, string> = {
+        conservative: 'Modo Conservador (0.50% riesgo/op · 50% exposición máx)',
+        balanced: 'Modo Moderado (1.25% riesgo/op · 75% exposición máx)',
+        aggressive: 'Modo Arriesgado Alta Convicción v1.3 (2.00% riesgo/op · 95% exposición Spot)',
+      };
+      setBannerNotice(`Perfil actualizado a ${labels[riskProfile]} y backtests recalculados.`);
+    } catch (err) {
+      setErrorBanner(err instanceof Error ? err.message : 'Error al cambiar perfil de riesgo');
     } finally {
       setIsBusy(false);
     }
@@ -402,6 +433,7 @@ export function App() {
           status={status}
           onToggleConnectivity={handleToggleConnectivity}
           onToggleDataProvider={handleToggleDataProvider}
+          onChangeRiskProfile={handleChangeRiskProfile}
           onTriggerKillSwitch={() => {
             handleActivateKillSwitch('Activación rápida desde barra superior del terminal');
           }}

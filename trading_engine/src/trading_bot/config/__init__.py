@@ -46,10 +46,11 @@ class StrategyConfig:
 
 @dataclass(frozen=True)
 class RiskConfig:
-    max_risk_per_trade: float = 0.005  # 0.5% del patrimonio
-    max_exposure: float = 0.50  # 50% del patrimonio
-    daily_loss_limit: float = 0.01  # 1.0% pérdida diaria máxima
-    max_drawdown_limit: float = 0.05  # 5.0% drawdown máximo desde el pico
+    risk_profile: str = "conservative"  # 'conservative' | 'balanced' | 'aggressive'
+    max_risk_per_trade: float = 0.005  # 0.5% del patrimonio (hasta 2.0% en modo aggressive)
+    max_exposure: float = 0.50  # 50% del patrimonio (hasta 95% en modo aggressive spot)
+    daily_loss_limit: float = 0.01  # 1.0% pérdida diaria máxima (hasta 3.0% en modo aggressive)
+    max_drawdown_limit: float = 0.05  # 5.0% drawdown máximo desde el pico (hasta 10.0% en modo aggressive)
     max_concurrent_positions: int = 1
     allow_leverage: bool = False
     allow_margin: bool = False
@@ -59,6 +60,55 @@ class RiskConfig:
     default_fee_rate: float = 0.001  # 0.10% por lado
     default_slippage_rate: float = 0.0005  # 0.05% por lado
     max_data_staleness_seconds: int = 7200  # 2 horas para velas de 1h
+
+
+def build_risk_config_for_profile(
+    profile: str,
+    default_fee_rate: float = 0.001,
+    default_slippage_rate: float = 0.0005,
+    min_order_notional_usdt: float = 5.0,
+) -> RiskConfig:
+    normalized = (profile or "conservative").strip().lower()
+    if normalized == "aggressive":
+        return RiskConfig(
+            risk_profile="aggressive",
+            max_risk_per_trade=0.020,
+            max_exposure=0.95,
+            daily_loss_limit=0.030,
+            max_drawdown_limit=0.100,
+            max_concurrent_positions=1,
+            min_order_notional_usdt=min_order_notional_usdt,
+            default_fee_rate=default_fee_rate,
+            default_slippage_rate=default_slippage_rate,
+        )
+    if normalized == "balanced":
+        return RiskConfig(
+            risk_profile="balanced",
+            max_risk_per_trade=0.0125,
+            max_exposure=0.75,
+            daily_loss_limit=0.020,
+            max_drawdown_limit=0.080,
+            max_concurrent_positions=1,
+            min_order_notional_usdt=min_order_notional_usdt,
+            default_fee_rate=default_fee_rate,
+            default_slippage_rate=default_slippage_rate,
+        )
+    if normalized == "conservative":
+        return RiskConfig(
+            risk_profile="conservative",
+            max_risk_per_trade=0.005,
+            max_exposure=0.50,
+            daily_loss_limit=0.010,
+            max_drawdown_limit=0.050,
+            max_concurrent_positions=1,
+            min_order_notional_usdt=min_order_notional_usdt,
+            default_fee_rate=default_fee_rate,
+            default_slippage_rate=default_slippage_rate,
+        )
+    raise ConfigValidationError(
+        f"Perfil de riesgo inválido: {profile}. Use 'conservative', 'balanced' o 'aggressive'."
+    )
+
 
 
 @dataclass(frozen=True)
@@ -213,15 +263,26 @@ def load_settings_from_env(env: dict | None = None) -> BotSettings:
             entry_timeframe=source.get("ENTRY_TIMEFRAME", "1h"),
             trend_timeframe=source.get("TREND_TIMEFRAME", "4h"),
         ),
-        risk=RiskConfig(
-            max_risk_per_trade=float(source.get("MAX_RISK_PER_TRADE", "0.005")),
-            max_exposure=float(source.get("MAX_EXPOSURE", "0.50")),
-            daily_loss_limit=float(source.get("DAILY_LOSS_LIMIT", "0.01")),
-            max_drawdown_limit=float(source.get("MAX_DRAWDOWN_LIMIT", "0.05")),
-            max_concurrent_positions=int(source.get("MAX_CONCURRENT_POSITIONS", "1")),
-            min_order_notional_usdt=float(source.get("MIN_ORDER_NOTIONAL_USDT", "5.0")),
-            default_fee_rate=float(source.get("DEFAULT_FEE_RATE", "0.001")),
-            default_slippage_rate=float(source.get("DEFAULT_SLIPPAGE_RATE", "0.0005")),
+        risk=(
+            build_risk_config_for_profile(
+                source.get("RISK_PROFILE", "conservative"),
+                default_fee_rate=float(source.get("DEFAULT_FEE_RATE", "0.001")),
+                default_slippage_rate=float(source.get("DEFAULT_SLIPPAGE_RATE", "0.0005")),
+                min_order_notional_usdt=float(source.get("MIN_ORDER_NOTIONAL_USDT", "5.0")),
+            )
+            if source.get("RISK_PROFILE")
+            and not source.get("MAX_RISK_PER_TRADE")
+            else RiskConfig(
+                risk_profile=source.get("RISK_PROFILE", "conservative").strip().lower(),
+                max_risk_per_trade=float(source.get("MAX_RISK_PER_TRADE", "0.005")),
+                max_exposure=float(source.get("MAX_EXPOSURE", "0.50")),
+                daily_loss_limit=float(source.get("DAILY_LOSS_LIMIT", "0.01")),
+                max_drawdown_limit=float(source.get("MAX_DRAWDOWN_LIMIT", "0.05")),
+                max_concurrent_positions=int(source.get("MAX_CONCURRENT_POSITIONS", "1")),
+                min_order_notional_usdt=float(source.get("MIN_ORDER_NOTIONAL_USDT", "5.0")),
+                default_fee_rate=float(source.get("DEFAULT_FEE_RATE", "0.001")),
+                default_slippage_rate=float(source.get("DEFAULT_SLIPPAGE_RATE", "0.0005")),
+            )
         ),
         data=DataConfig(
             provider=source.get("DATA_PROVIDER", "synthetic_deterministic").strip().lower(),

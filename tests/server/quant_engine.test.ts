@@ -59,6 +59,24 @@ test('PythonEngineBridge arranca en modo paper, ejecuta backtests 60/20/20 y apl
   assert.equal(rejectedMinNotional.approved, false);
   assert.equal(rejectedMinNotional.reason_code, 'MIN_NOTIONAL_EXCEEDS_RISK_OR_EXPOSURE');
 
+  // Verificar cambio a Modo Arriesgado Alta Convicción (2.0% riesgo/op y 95% exposición Spot)
+  bridge.setRiskProfile('aggressive');
+  assert.equal(bridge.getRiskProfile(), 'aggressive');
+  assert.equal(bridge.getRiskLimits().max_risk_per_trade, 0.02);
+  assert.equal(bridge.getRiskLimits().max_exposure, 0.95);
+  const aggrDec = bridge.simulateRiskCheck({
+    symbol: 'BTC/USDT',
+    reference_price: 90_000,
+    proposed_stop: 88_200,
+    equity_usdt: 95.24,
+    current_exposure_usdt: 0,
+    daily_loss_pct: 0.2,
+    drawdown_pct: 0.8,
+  });
+  assert.equal(aggrDec.approved, true);
+  assert.equal(aggrDec.notional_usdt > 50.0, true);
+  assert.equal(aggrDec.estimated_risk_pct <= 0.0205, true);
+
   // Verificar que el interruptor de emergencia bloquea nuevas órdenes
   bridge.activateKillSwitch('Prueba unitaria de emergencia');
   assert.equal(bridge.getKillSwitchState().active, true);

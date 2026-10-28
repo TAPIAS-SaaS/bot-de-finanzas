@@ -57,6 +57,7 @@ export function createApiRouter(deps?: {
     return {
       effective_mode: bridge.getEffectiveMode(),
       data_provider: bridge.getDataProvider(),
+      risk_profile: bridge.getRiskProfile(),
       python_engine_connected: bridge.isPythonConnected(),
       python_engine_transport: bridge.isPythonConnected()
         ? 'python3_subprocess_bridge'
@@ -69,20 +70,7 @@ export function createApiRouter(deps?: {
       candidate_symbols: ['BTC/USDT', 'ETH/USDT'],
       last_data_timestamp: lastSig.evaluated_at,
       data_staleness_seconds: 60,
-      risk_limits: {
-        max_risk_per_trade: 0.005,
-        max_exposure: 0.5,
-        daily_loss_limit: 0.01,
-        max_drawdown_limit: 0.05,
-        max_concurrent_positions: 1,
-        min_order_notional_usdt: 5.0,
-        default_fee_rate: 0.001,
-        default_slippage_rate: 0.0005,
-        allow_leverage: false,
-        allow_margin: false,
-        allow_short: false,
-        allow_withdrawals: false,
-      },
+      risk_limits: bridge.getRiskLimits(),
       live_readiness: {
         ready_for_live: blockingReasons.length === 0,
         checks,
@@ -365,6 +353,41 @@ export function createApiRouter(deps?: {
           err instanceof Error
             ? err.message
             : 'No fue posible conectar con el proveedor de velas solicitado.',
+      });
+    }
+  });
+
+  router.post('/engine/risk-profile', requireAdminAuth, (req, res) => {
+    const rawProfile = req.body?.risk_profile;
+    if (
+      rawProfile !== 'conservative' &&
+      rawProfile !== 'balanced' &&
+      rawProfile !== 'aggressive'
+    ) {
+      return res.status(400).json({
+        error: 'INVALID_RISK_PROFILE',
+        message: 'El perfil debe ser "conservative", "balanced" o "aggressive".',
+      });
+    }
+    const targetSymbol = req.body?.symbol === 'ETH/USDT' ? 'ETH/USDT' : 'BTC/USDT';
+    try {
+      bridge.setRiskProfile(rawProfile);
+      if (bridge.isPythonConnected()) {
+        bridge.runBacktestComparison(targetSymbol);
+        bridge.runPaperStep(targetSymbol);
+      }
+      return res.json({
+        status: buildStatusPayload(),
+        portfolio: bridge.getPortfolioSummary(),
+        last_signal: bridge.getLastSignal(targetSymbol),
+      });
+    } catch (err) {
+      return res.status(503).json({
+        error: 'RISK_PROFILE_SWITCH_FAILED',
+        message:
+          err instanceof Error
+            ? err.message
+            : 'No fue posible actualizar el perfil de riesgo en el motor Python.',
       });
     }
   });

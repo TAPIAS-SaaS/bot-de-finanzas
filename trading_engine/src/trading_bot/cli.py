@@ -34,6 +34,12 @@ def main(argv: list[str] | None = None) -> int:
         choices=["synthetic_deterministic", "binance_public"],
         help="Fuente de velas: synthetic_deterministic o binance_public (tiempo real sin API key)",
     )
+    bt_parser.add_argument(
+        "--risk-profile",
+        default=None,
+        choices=["conservative", "balanced", "aggressive"],
+        help="Perfil de riesgo: conservative (0.5%), balanced (1.25%) o aggressive (2.0%)",
+    )
 
     step_parser = sub.add_parser("paper-step", help="Ejecuta un ciclo de evaluación Paper Trading")
     step_parser.add_argument("--symbol", default="BTC/USDT", choices=["BTC/USDT", "ETH/USDT"])
@@ -43,13 +49,25 @@ def main(argv: list[str] | None = None) -> int:
         choices=["synthetic_deterministic", "binance_public"],
         help="Fuente de velas: synthetic_deterministic o binance_public (tiempo real sin API key)",
     )
+    step_parser.add_argument(
+        "--risk-profile",
+        default=None,
+        choices=["conservative", "balanced", "aggressive"],
+        help="Perfil de riesgo: conservative (0.5%), balanced (1.25%) o aggressive (2.0%)",
+    )
 
     serve_parser = sub.add_parser("serve", help="Inicia el servidor HTTP del motor Python")
     serve_parser.add_argument("--host", default="127.0.0.1")
     serve_parser.add_argument("--port", type=int, default=8000)
 
     args = parser.parse_args(argv)
-    engine = TradingBotEngine()
+    import os
+    from trading_bot.config import load_settings_from_env
+    env_override = dict(os.environ)
+    if getattr(args, "risk_profile", None):
+        env_override["RISK_PROFILE"] = args.risk_profile
+        env_override.pop("MAX_RISK_PER_TRADE", None)
+    engine = TradingBotEngine(settings=load_settings_from_env(env_override))
 
     if args.command == "status":
         print(json.dumps(engine.get_status_summary(), indent=2))
@@ -66,6 +84,7 @@ def main(argv: list[str] | None = None) -> int:
                     {
                         "symbol": args.symbol,
                         "data_provider": provider,
+                        "risk_profile": engine.settings.risk.risk_profile,
                         "reports": reports,
                     }
                 )

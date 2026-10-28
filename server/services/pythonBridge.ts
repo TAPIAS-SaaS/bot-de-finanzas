@@ -16,6 +16,7 @@ import type {
   ForecastComparisonDTO,
   PortfolioSummaryDTO,
   RiskDecisionDTO,
+  RiskProfileType,
   StrategySignalDTO,
   TradingMode,
   VirtualPositionDTO,
@@ -31,6 +32,10 @@ export class PythonEngineBridge {
   private primarySymbol = 'BTC/USDT';
   private dataProvider: DataProviderType =
     process.env.DATA_PROVIDER === 'binance_public' ? 'binance_public' : 'synthetic_deterministic';
+  private riskProfile: RiskProfileType =
+    process.env.RISK_PROFILE === 'aggressive' || process.env.RISK_PROFILE === 'balanced'
+      ? process.env.RISK_PROFILE
+      : 'conservative';
   private cachedBacktests: Map<string, BacktestReportDTO[]> = new Map();
   private lastSignalBySymbol: Map<string, StrategySignalDTO> = new Map();
   private openPositions: Map<string, VirtualPositionDTO> = new Map();
@@ -58,11 +63,16 @@ export class PythonEngineBridge {
       PYTHONPATH: path.resolve(process.cwd(), 'trading_engine/src'),
       SQLITE_DB_PATH: this.auditRepo.dbPath,
       DATA_PROVIDER: this.dataProvider,
+      RISK_PROFILE: this.riskProfile,
     };
   }
 
-  private cacheKey(symbol: string, provider = this.dataProvider): string {
-    return `${provider}:${symbol}`;
+  private cacheKey(
+    symbol: string,
+    provider = this.dataProvider,
+    profile = this.riskProfile
+  ): string {
+    return `${provider}:${profile}:${symbol}`;
   }
 
   private bootstrapInitialState(): void {
@@ -99,6 +109,73 @@ export class PythonEngineBridge {
         ? 'Fuente de datos cambiada a Velas Públicas en Tiempo Real (Binance Spot REST 1h/4h sin API Key).'
         : 'Fuente de datos cambiada a Serie Determinista Reproducible Offline (1.200h).'
     );
+  }
+
+  public getRiskProfile(): RiskProfileType {
+    return this.riskProfile;
+  }
+
+  public setRiskProfile(profile: RiskProfileType): void {
+    this.riskProfile = profile;
+    const labels: Record<RiskProfileType, string> = {
+      conservative: 'Conservador (0.5% riesgo/op · 50% exposición máx)',
+      balanced: 'Moderado (1.25% riesgo/op · 75% exposición máx)',
+      aggressive: 'Arriesgado Alta Convicción Spot 1x (2.0% riesgo/op · 95% exposición máx)',
+    };
+    this.auditRepo.logAuditEvent(
+      'INFO',
+      'RISK_PROFILE',
+      `Perfil de riesgo cambiado a ${labels[profile]}.`
+    );
+  }
+
+  public getRiskLimits() {
+    if (this.riskProfile === 'aggressive') {
+      return {
+        max_risk_per_trade: 0.02,
+        max_exposure: 0.95,
+        daily_loss_limit: 0.03,
+        max_drawdown_limit: 0.1,
+        max_concurrent_positions: 1,
+        min_order_notional_usdt: 5.0,
+        default_fee_rate: 0.001,
+        default_slippage_rate: 0.0005,
+        allow_leverage: false,
+        allow_margin: false,
+        allow_short: false,
+        allow_withdrawals: false,
+      };
+    }
+    if (this.riskProfile === 'balanced') {
+      return {
+        max_risk_per_trade: 0.0125,
+        max_exposure: 0.75,
+        daily_loss_limit: 0.02,
+        max_drawdown_limit: 0.08,
+        max_concurrent_positions: 1,
+        min_order_notional_usdt: 5.0,
+        default_fee_rate: 0.001,
+        default_slippage_rate: 0.0005,
+        allow_leverage: false,
+        allow_margin: false,
+        allow_short: false,
+        allow_withdrawals: false,
+      };
+    }
+    return {
+      max_risk_per_trade: 0.005,
+      max_exposure: 0.5,
+      daily_loss_limit: 0.01,
+      max_drawdown_limit: 0.05,
+      max_concurrent_positions: 1,
+      min_order_notional_usdt: 5.0,
+      default_fee_rate: 0.001,
+      default_slippage_rate: 0.0005,
+      allow_leverage: false,
+      allow_margin: false,
+      allow_short: false,
+      allow_withdrawals: false,
+    };
   }
 
   public isPythonConnected(): boolean {
@@ -192,6 +269,8 @@ export class PythonEngineBridge {
         'all',
         '--provider',
         this.dataProvider,
+        '--risk-profile',
+        this.riskProfile,
       ],
       {
         env: this.pythonEnv,
@@ -243,6 +322,8 @@ export class PythonEngineBridge {
         symbol,
         '--provider',
         this.dataProvider,
+        '--risk-profile',
+        this.riskProfile,
       ],
       {
         env: {
@@ -275,7 +356,7 @@ export class PythonEngineBridge {
       evaluated_at: Math.floor(Date.now() / 1000) - 120,
       signal: 'HOLD',
       strategy_id: this.activeStrategyId,
-      strategy_version: '1.0.0',
+      strategy_version: '1.3.0',
       indicators: {
         ema50_4h: 91240.5,
         ema200_4h: 89410.2,
@@ -288,7 +369,7 @@ export class PythonEngineBridge {
       invalidation_level: 91320.0,
       proposed_stop: 90794.4,
       proposed_take_profit: 93064.8,
-      explanation: 'Evaluación determinista sobre velas cerradas 1h y filtro de tendencia 4h.',
+      explanation: 'Evaluación determinista v1.3.0 sobre velas cerradas 1h y filtro de tendencia 4h.',
     };
   }
 
@@ -314,8 +395,8 @@ export class PythonEngineBridge {
       data_source_label: !this.pythonConnected
         ? 'Modo Demostración — Motor Python desconectado'
         : this.dataProvider === 'binance_public'
-          ? 'Velas Públicas en Tiempo Real — Binance Spot REST (1h/4h sin API Key)'
-          : 'Simulación determinista verificada (Motor Python 3.10 + SQLite)',
+          ? `Velas Públicas en Tiempo Real — Binance Spot REST 1h/4h (${this.riskProfile.toUpperCase()})`
+          : `Simulación determinista verificada v1.3.0 (${this.riskProfile.toUpperCase()})`,
       initial_capital_cop: this.initialCapitalCop,
       reference_cop_per_usdt: this.referenceCopPerUsdt,
       initial_equity_usdt: initEq,
@@ -351,13 +432,14 @@ export class PythonEngineBridge {
     daily_loss_pct: number;
     drawdown_pct: number;
   }): RiskDecisionDTO {
-    const maxRiskPct = 0.005;
-    const maxExposurePct = 0.5;
-    const dailyLossLimitPct = 1.0;
-    const maxDrawdownLimitPct = 5.0;
-    const minNotionalUsdt = 5.0;
-    const feeRate = 0.001;
-    const slippageRate = 0.0005;
+    const limits = this.getRiskLimits();
+    const maxRiskPct = limits.max_risk_per_trade;
+    const maxExposurePct = limits.max_exposure;
+    const dailyLossLimitPct = limits.daily_loss_limit * 100;
+    const maxDrawdownLimitPct = limits.max_drawdown_limit * 100;
+    const minNotionalUsdt = limits.min_order_notional_usdt;
+    const feeRate = limits.default_fee_rate;
+    const slippageRate = limits.default_slippage_rate;
 
     if (this.killSwitchActive) {
       return {

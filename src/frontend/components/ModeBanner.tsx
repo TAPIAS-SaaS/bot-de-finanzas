@@ -1,12 +1,13 @@
 import React from 'react';
 import { AlertTriangle, Radio, ShieldAlert, ShieldCheck, Unplug } from 'lucide-react';
-import type { DataProviderType, EngineStatusDTO } from '../../shared/types';
+import type { DataProviderType, EngineStatusDTO, RiskProfileType } from '../../shared/types';
 import { formatUtcTimestamp, getModeDescriptor } from '../utils/formatters';
 
 interface ModeBannerProps {
   status: EngineStatusDTO;
   onToggleConnectivity: (connected: boolean) => void;
   onToggleDataProvider: (provider: DataProviderType) => void;
+  onChangeRiskProfile: (profile: RiskProfileType) => void;
   onTriggerKillSwitch: () => void;
   isBusy: boolean;
 }
@@ -15,6 +16,7 @@ export const ModeBanner: React.FC<ModeBannerProps> = ({
   status,
   onToggleConnectivity,
   onToggleDataProvider,
+  onChangeRiskProfile,
   onTriggerKillSwitch,
   isBusy,
 }) => {
@@ -66,6 +68,21 @@ export const ModeBanner: React.FC<ModeBannerProps> = ({
           <span aria-hidden="true" className="text-slate-600">
             ·
           </span>
+          <label className="inline-flex items-center gap-1.5 text-xs text-slate-300">
+            <span className="font-mono text-slate-400">Perfil:</span>
+            <select
+              aria-label="Perfil de riesgo operativo"
+              disabled={isBusy || !status.python_engine_connected}
+              value={status.risk_profile || 'conservative'}
+              onChange={(e) => onChangeRiskProfile(e.target.value as RiskProfileType)}
+              className="rounded-md border border-slate-700 bg-slate-900 px-2.5 py-1.5 font-mono text-xs font-semibold text-sky-300 focus:border-sky-400 focus:outline-none disabled:opacity-50"
+            >
+              <option value="conservative">Conservador (0.5% / Exp 50%)</option>
+              <option value="balanced">Moderado (1.25% / Exp 75%)</option>
+              <option value="aggressive">Arriesgado v1.3 (2.0% / Exp 95%)</option>
+            </select>
+          </label>
+
           <button
             type="button"
             disabled={isBusy || !status.python_engine_connected}

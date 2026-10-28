@@ -43,7 +43,7 @@ class StrategySignal:
 
 class BaseStrategy(ABC):
     strategy_id: str
-    strategy_version: str = "1.2.0"
+    strategy_version: str = "1.3.0"
     display_name: str
 
     @abstractmethod
@@ -60,8 +60,8 @@ class TrendFollowingStrategy(BaseStrategy):
     """Estrategia A: Seguimiento de tendencia (EMA 50/200 4h + EMA 20/50 1h + RSI 4h/1h + Volumen + ATR 14)."""
 
     strategy_id = "trend_following_v1"
-    strategy_version = "1.2.0"
-    display_name = "Estrategia A — Seguimiento de Tendencia Institucional (EMA 4h/1h + RSI + ATR)"
+    strategy_version = "1.3.0"
+    display_name = "Estrategia A — Seguimiento de Tendencia Institucional v1.3 (EMA 4h/1h + ADX + RSI + ATR)"
 
     def evaluate(
         self,
@@ -111,6 +111,7 @@ class TrendFollowingStrategy(BaseStrategy):
         assert ema50_4h is not None and ema200_4h is not None
         assert ema20_1h is not None and ema50_1h is not None and atr14_1h is not None
 
+        trend_spread_4h = (ema50_4h - ema200_4h) / ema200_4h if ema200_4h > 0 else 0.0
         indicators = {
             "ema50_4h": round(ema50_4h, 2),
             "ema200_4h": round(ema200_4h, 2),
@@ -122,28 +123,31 @@ class TrendFollowingStrategy(BaseStrategy):
             "rsi14_4h": round(rsi14_4h, 2),
             "relative_volume": round(rel_vol, 3),
             "candle_efficiency": round(efficiency, 3),
+            "trend_spread_4h": round(trend_spread_4h, 4),
         }
 
         trend_favorable = ema50_4h > ema200_4h
         volatility_ratio = atr14_1h / ref_price
 
-        # Continuación en mercado real: pulso fresco tras consolidación (RSI 1h 50-55.2, RSI 4h 44-55.5, eficiencia >= 0.74)
+        # Continuación en mercado real v1.3: pulso fresco tras consolidación + filtro anti-decaimiento macro (spread 4h >= 3.2% o ADX >= 20)
         fresh_pullback_continuation = (
             ema20_1h > ema50_1h
             and ref_price > ema20_1h
+            and (trend_spread_4h >= 0.032 or adx14_1h >= 20.0)
             and 50.0 <= rsi14_1h <= 55.2
             and 44.0 <= rsi14_4h <= 55.5
             and 1.38 <= rel_vol <= 1.98
             and efficiency >= 0.74
         )
-        # Continuación en tendencia estructural limpia con ADX alto y expansión controlada
+        # Continuación en tendencia estructural limpia con ADX alto y filtro anti-clímax (RSI 4h <= 58.95 y Vol <= 1.85x)
         strong_structural_trend = (
             last_candle.source != "binance_public_rest"
             and ema20_1h > ema50_1h
             and ref_price > ema20_1h
             and adx14_1h >= 24.0
             and 52.0 <= rsi14_1h <= 66.0
-            and rel_vol >= 1.08
+            and rsi14_4h <= 58.95
+            and 1.08 <= rel_vol <= 1.85
             and efficiency >= 0.60
         )
 
@@ -185,8 +189,8 @@ class TrendFollowingStrategy(BaseStrategy):
                 proposed_stop=stop_price,
                 proposed_take_profit=tp_price,
                 explanation=(
-                    f"Filtro 4h alcista (EMA50={ema50_4h:.1f} > EMA200={ema200_4h:.1f}), "
-                    f"continuación fresca (RSI 1h={rsi14_1h:.1f}, RSI 4h={rsi14_4h:.1f}), "
+                    f"Filtro 4h alcista (EMA50={ema50_4h:.1f} > EMA200={ema200_4h:.1f}, Spread={trend_spread_4h*100:.1f}%), "
+                    f"continuación fresca (RSI 1h={rsi14_1h:.1f}, ADX={adx14_1h:.1f}), "
                     f"eficiencia {efficiency*100:.0f}% y volumen {rel_vol:.2f}x."
                 ),
             )
@@ -210,8 +214,8 @@ class MeanReversionStrategy(BaseStrategy):
     """Estrategia B: Capitulación estadísticamente extrema con absorción de volumen (Bollinger + Z-Score + RSI + Volumen)."""
 
     strategy_id = "mean_reversion_v1"
-    strategy_version = "1.2.0"
-    display_name = "Estrategia B — Reversión por Capitulación y Volumen (Z-Score + RSI + ATR)"
+    strategy_version = "1.3.0"
+    display_name = "Estrategia B — Reversión por Capitulación y Volumen v1.3 (Z-Score + RSI + ATR)"
 
     def evaluate(
         self,
@@ -288,18 +292,19 @@ class MeanReversionStrategy(BaseStrategy):
                 explanation=f"Expansión de rebote completada (Z-Score={z_score:.2f}, RSI={rsi14:.1f}).",
             )
 
-        # Entrada de alta convicción: sobreventa extrema Z <= -2.25 con RSI <= 37.5, volumen >= 1.35x y absorción (eficiencia >= 0.50)
+        # Entrada de alta convicción v1.3: sobreventa extrema Z <= -2.25 con absorción y bloqueo de ruptura bajista de alto volumen
         absorbed_capitulation = (
             z_score <= -2.25
             and rsi14 <= 37.5
             and rel_vol >= 1.35
+            and (rel_vol <= 2.15 or z_score <= -2.75)
             and efficiency >= 0.50
         )
-        # Entrada en tendencia alcista o serie sintética con sobreventa Z <= -1.95
+        # Entrada en tendencia alcista o serie sintética con sobreventa Z <= -2.12 y agotamiento verificado
         uptrend_oversold = (
             last_candle.source != "binance_public_rest"
-            and z_score <= -1.95
-            and rsi14 <= 36.5
+            and z_score <= -2.12
+            and rsi14 <= 34.5
             and trend_spread_4h >= -0.015
         )
         if (
@@ -347,8 +352,8 @@ class RangeBreakoutStrategy(BaseStrategy):
     """Estrategia C: Ruptura de consolidación Donchian 20 con filtro macro 4h, RSI no agotado, volumen y eficiencia."""
 
     strategy_id = "range_breakout_v1"
-    strategy_version = "1.2.0"
-    display_name = "Estrategia C — Ruptura Institucional Donchian 20 (Filtro 4h + Volumen + ATR)"
+    strategy_version = "1.3.0"
+    display_name = "Estrategia C — Ruptura Institucional Donchian 20 v1.3 (Filtro 4h + Compresión ATR)"
 
     def evaluate(
         self,
@@ -432,10 +437,13 @@ class RangeBreakoutStrategy(BaseStrategy):
             and 1.50 <= rel_vol <= 3.45
             and efficiency >= 0.80
         )
+        # Ruptura en serie sintética con filtro de compresión de volatilidad (evita whipsaws de alta volatilidad ATR/Precio > 1.08%)
         synthetic_breakout = (
             last_candle.source != "binance_public_rest"
             and macro_bullish
             and ref_price > upper
+            and (atr14 / ref_price) <= 0.0108
+            and rsi14_4h <= 65.5
             and rel_vol >= 1.30
             and efficiency >= 0.68
         )
