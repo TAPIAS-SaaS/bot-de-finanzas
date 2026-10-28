@@ -1,11 +1,16 @@
 import React, { useState } from 'react';
-import type { EngineStatusDTO, RiskDecisionDTO } from '../../shared/types';
+import {
+  SUPPORTED_SPOT_SYMBOLS,
+  type EngineStatusDTO,
+  type RiskDecisionDTO,
+  type SpotSymbol,
+} from '../../shared/types';
 import { formatUsdt } from '../utils/formatters';
 
 interface RiskAndLiveGateTabProps {
   status: EngineStatusDTO;
   onSimulateRisk: (params: {
-    symbol: 'BTC/USDT' | 'ETH/USDT';
+    symbol: SpotSymbol;
     reference_price: number;
     proposed_stop: number;
     equity_usdt: number;
@@ -25,7 +30,7 @@ export const RiskAndLiveGateTab: React.FC<RiskAndLiveGateTabProps> = ({
   onResumeKillSwitch,
   isBusy,
 }) => {
-  const [simSymbol, setSimSymbol] = useState<'BTC/USDT' | 'ETH/USDT'>('BTC/USDT');
+  const [simSymbol, setSimSymbol] = useState<SpotSymbol>(status.primary_symbol || 'SOL/USDT');
   const [refPrice, setRefPrice] = useState<string>('90000');
   const [stopPrice, setStopPrice] = useState<string>('89100');
   const [equityUsdt, setEquityUsdt] = useState<string>('95.24');
@@ -98,7 +103,7 @@ export const RiskAndLiveGateTab: React.FC<RiskAndLiveGateTabProps> = ({
             01. Verificador de Cálculo de Posición y Reglas de Rechazo
           </h2>
           <p className="mt-1 text-xs text-slate-400">
-            Compruebe cómo el Gestor de Riesgo calcula el tamaño o rechaza órdenes cuando el mínimo del exchange (5.00 USDT) supera el 0,5% de riesgo permitido.
+            Compruebe cómo el Gestor de Riesgo calcula el tamaño o rechaza órdenes cuando el mínimo del exchange (5.00 USDT) supera el límite de riesgo por operación.
           </p>
 
           <form onSubmit={handleRunSimulation} className="mt-4 space-y-4">
@@ -107,11 +112,14 @@ export const RiskAndLiveGateTab: React.FC<RiskAndLiveGateTabProps> = ({
                 <span>Símbolo Spot</span>
                 <select
                   value={simSymbol}
-                  onChange={(e) => setSimSymbol(e.target.value as 'BTC/USDT' | 'ETH/USDT')}
+                  onChange={(e) => setSimSymbol(e.target.value as SpotSymbol)}
                   className="mt-1 w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 font-mono text-xs text-slate-100"
                 >
-                  <option value="BTC/USDT">BTC/USDT</option>
-                  <option value="ETH/USDT">ETH/USDT</option>
+                  {SUPPORTED_SPOT_SYMBOLS.map((sym) => (
+                    <option key={sym} value={sym}>
+                      {sym}
+                    </option>
+                  ))}
                 </select>
               </label>
 

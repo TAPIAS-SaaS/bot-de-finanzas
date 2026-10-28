@@ -4,7 +4,7 @@
  */
 
 import { Router } from 'express';
-import type { EngineStatusDTO } from '../../src/shared/types';
+import { SUPPORTED_SPOT_SYMBOLS, type EngineStatusDTO, type SpotSymbol } from '../../src/shared/types';
 import {
   KillSwitchResumeSchema,
   PaperStepSchema,
@@ -13,7 +13,7 @@ import {
   RunBacktestSchema,
 } from '../middleware/security';
 import { ServerGeminiAdvisor } from '../services/geminiAdvisor';
-import { PythonEngineBridge } from '../services/pythonBridge';
+import { isValidSpotSymbol, PythonEngineBridge } from '../services/pythonBridge';
 import { NodeSQLiteAuditRepository } from '../services/sqliteStore';
 
 export function createApiRouter(deps?: {
@@ -26,10 +26,15 @@ export function createApiRouter(deps?: {
   const bridge = deps?.bridge || new PythonEngineBridge(auditRepo);
   const advisor = deps?.advisor || new ServerGeminiAdvisor();
 
+  const resolveSymbol = (raw: unknown): SpotSymbol => {
+    return isValidSpotSymbol(raw) ? raw : bridge.getPrimarySymbol();
+  };
+
   const buildStatusPayload = (): EngineStatusDTO => {
     const ks = bridge.getKillSwitchState();
-    const lastSig = bridge.getLastSignal('BTC/USDT');
-    const reports = bridge.getCachedOrRunBacktests('BTC/USDT');
+    const activeSym = bridge.getPrimarySymbol();
+    const lastSig = bridge.getLastSignal(activeSym);
+    const reports = bridge.getCachedOrRunBacktests(activeSym);
     const anyPassedOos = reports.some((r) => r.acceptance.passed);
 
     const checks: Record<string, boolean> = {
@@ -66,8 +71,8 @@ export function createApiRouter(deps?: {
       kill_switch_active: ks.active,
       kill_switch_reason: ks.reason,
       active_strategy_id: bridge.getActiveStrategyId(),
-      primary_symbol: bridge.getPrimarySymbol(),
-      candidate_symbols: ['BTC/USDT', 'ETH/USDT'],
+      primary_symbol: activeSym,
+      candidate_symbols: [...SUPPORTED_SPOT_SYMBOLS],
       last_data_timestamp: lastSig.evaluated_at,
       data_staleness_seconds: 60,
       risk_limits: bridge.getRiskLimits(),
@@ -84,6 +89,14 @@ export function createApiRouter(deps?: {
     res.json(buildStatusPayload());
   });
 
+  router.get('/scanner', (_req, res) => {
+    res.json({
+      active_symbol: bridge.getPrimarySymbol(),
+      risk_profile: bridge.getRiskProfile(),
+      scanner: bridge.getMarketScanner(),
+    });
+  });
+
   router.get('/portfolio', (_req, res) => {
     res.json(bridge.getPortfolioSummary());
   });
@@ -93,7 +106,7 @@ export function createApiRouter(deps?: {
   });
 
   router.get('/trades', (req, res) => {
-    const symbol = req.query.symbol === 'ETH/USDT' ? 'ETH/USDT' : 'BTC/USDT';
+    const symbol = resolveSymbol(req.query.symbol);
     const reports = bridge.getCachedOrRunBacktests(symbol);
     const active =
       reports.find((r) => r.strategy_id === bridge.getActiveStrategyId()) || reports[0];
@@ -111,46 +124,46 @@ export function createApiRouter(deps?: {
       strategies: [
         {
           id: 'trend_following_v1',
-          name: 'Estrategia A — Seguimiento de Tendencia (EMA 4h/1h + ATR)',
-          version: '1.0.0',
+          name: 'Estrategia A — Seguimiento de Tendencia Multi-Activo (EMA 4h/1h + ATR + ADX)',
+          version: '1.4.0',
           timeframe_entry: '1h',
           timeframe_filter: '4h',
-          indicators: ['EMA 50 (4h)', 'EMA 200 (4h)', 'EMA 20 (1h)', 'EMA 50 (1h)', 'ATR 14 (1h)', 'Volumen Relativo (20)'],
+          indicators: ['EMA 50 (4h)', 'EMA 200 (4h)', 'EMA 20 (1h)', 'EMA 50 (1h)', 'ATR 14 (1h)', 'ADX 14 (1h)', 'Volumen Relativo (20)'],
           entry_rule:
-            'EMA50(4h) > EMA200(4h), EMA20(1h) > EMA50(1h), Cierre(1h) > EMA20(1h), Volumen Relativo >= 0.90x y ratio ATR/Precio entre 0.20% y 3.50%.',
+            'EMA50(4h) > EMA200(4h), EMA20(1h) > EMA50(1h), ADX >= 25 (24 en altcoins de alta beta), RSI entre 55 y 69 y filtro de eficiencia direccional.',
           exit_rule:
-            'Stop-Loss inicial en Entrada - 2.0 * ATR(14), Take-Profit en Entrada + 3.5 * ATR(14), o cierre de vela 1h por debajo de EMA 50.',
+            'Trailing Stop dinámico escalonado + Breakeven automático en +0.85 * ATR, Take-Profit en +2.60 * ATR o pérdida de EMA 50.',
         },
         {
           id: 'mean_reversion_v1',
-          name: 'Estrategia B — Reversión a la Media (Bollinger 20 + Z-Score)',
-          version: '1.0.0',
+          name: 'Estrategia B — Reversión por Capitulación Institucional (Bollinger 20 + Z-Score)',
+          version: '1.4.0',
           timeframe_entry: '1h',
           timeframe_filter: '4h',
           indicators: ['Media Móvil 20 (1h)', 'Bandas Bollinger ±2σ', 'Z-Score (20)', 'ATR 14 (1h)', 'Spread EMA 50/200 (4h)'],
           entry_rule:
-            'Z-Score <= -1.85 en vela cerrada de 1h, siempre que no exista tendencia bajista fuerte en 4h (spread EMA50/200 >= -1.5%) y ATR/Precio <= 3.0%.',
+            'Pin-bar de agotamiento alcista en vela 1h con Z-Score <= -1.95 (o washout <= -2.45 sobre soporte EMA50 4h en altcoins) y volumen controlado.',
           exit_rule:
-            'Retorno a la media móvil de 20 períodos (Z-Score >= 0.15) o Stop-Loss en Entrada - 1.8 * ATR(14).',
+            'Retorno a la media móvil de 20 períodos (Z-Score >= -0.05), Breakeven en +0.75 * ATR o Stop-Loss protector.',
         },
         {
           id: 'range_breakout_v1',
-          name: 'Estrategia C — Ruptura de Rangos (Donchian 20 + Volumen)',
-          version: '1.0.0',
+          name: 'Estrategia C — Ruptura de Compresión Donchian (Donchian 20 + Volumen)',
+          version: '1.4.0',
           timeframe_entry: '1h',
           timeframe_filter: '4h',
-          indicators: ['Canal Donchian Alto/Bajo/Medio (20 velas previas)', 'Volumen Relativo (20)', 'ATR 14 (1h)'],
+          indicators: ['Canal Donchian Alto/Bajo/Medio (20 velas previas)', 'Volumen Relativo (20)', 'ATR 14 (1h)', 'ADX 14 (1h)'],
           entry_rule:
-            'Cierre de vela 1h superior al máximo de las 20 velas previas confirmado con Volumen Relativo >= 1.25x. Ejecución al OPEN de la siguiente vela.',
+            'Cierre de vela 1h superior al máximo de 20 velas previas tras compresión previa de canal con Volumen Relativo confirmado. Ejecución al siguiente OPEN.',
           exit_rule:
-            'Cierre inferior al punto medio del canal Donchian, Stop-Loss en máx(Donchian Mid, Entrada - 2.0 * ATR) o Take-Profit en +3.2 * ATR.',
+            'Trailing Stop por encima del punto medio Donchian, Breakeven en +0.85 * ATR o Take-Profit en +2.50 * ATR.',
         },
       ],
     });
   });
 
   router.get('/backtests', (req, res) => {
-    const symbol = req.query.symbol === 'ETH/USDT' ? 'ETH/USDT' : 'BTC/USDT';
+    const symbol = resolveSymbol(req.query.symbol);
     const reports = bridge.getCachedOrRunBacktests(symbol);
     res.json({
       symbol,
@@ -167,6 +180,7 @@ export function createApiRouter(deps?: {
       });
     }
     try {
+      bridge.setPrimarySymbol(parsed.data.symbol);
       const reports = bridge.runBacktestComparison(parsed.data.symbol);
       if (parsed.data.strategy_id !== 'all') {
         bridge.setActiveStrategyId(parsed.data.strategy_id);
@@ -175,6 +189,7 @@ export function createApiRouter(deps?: {
         symbol: parsed.data.symbol,
         active_strategy_id: bridge.getActiveStrategyId(),
         reports,
+        scanner: bridge.getMarketScanner(),
       });
     } catch (err) {
       return res.status(503).json({
@@ -207,19 +222,20 @@ export function createApiRouter(deps?: {
   });
 
   router.get('/forecasts', (req, res) => {
-    const symbol = req.query.symbol === 'ETH/USDT' ? 'ETH/USDT' : 'BTC/USDT';
+    const symbol = resolveSymbol(req.query.symbol);
     res.json(bridge.getForecastComparison(symbol, 12));
   });
 
-  let cachedAdvisorAnalysis: Record<string, unknown> | null = null;
+  const cachedAdvisorBySymbol = new Map<string, Record<string, unknown>>();
 
   router.get('/ai/analysis', async (req, res) => {
-    const symbol = req.query.symbol === 'ETH/USDT' ? 'ETH/USDT' : 'BTC/USDT';
+    const symbol = resolveSymbol(req.query.symbol);
     const forceRefresh = req.query.refresh === '1';
     const sig = bridge.getLastSignal(symbol);
 
-    if (!forceRefresh && cachedAdvisorAnalysis) {
-      return res.json(cachedAdvisorAnalysis);
+    const existing = cachedAdvisorBySymbol.get(symbol);
+    if (!forceRefresh && existing) {
+      return res.json(existing);
     }
 
     if (!forceRefresh) {
@@ -232,9 +248,12 @@ export function createApiRouter(deps?: {
           activeStrategyId: bridge.getActiveStrategyId(),
         },
         new Date(sig.evaluated_at * 1000).toISOString(),
-        'Resumen técnico determinista inicial al cierre de vela 1h. Pulse "Solicitar Análisis Estructurado a Gemini" para ejecutar inferencia bajo demanda (control de cuota activo).'
+        `Resumen técnico determinista inicial al cierre de vela 1h (${symbol}). Pulse "Solicitar Análisis Estructurado a Gemini" para ejecutar inferencia bajo demanda (control de cuota activo).`
       );
-      cachedAdvisorAnalysis = initialDeterministic as unknown as Record<string, unknown>;
+      cachedAdvisorBySymbol.set(
+        symbol,
+        initialDeterministic as unknown as Record<string, unknown>
+      );
       return res.json(initialDeterministic);
     }
 
@@ -246,7 +265,7 @@ export function createApiRouter(deps?: {
       activeStrategyId: bridge.getActiveStrategyId(),
       dataTimestamp: sig.evaluated_at,
     });
-    cachedAdvisorAnalysis = analysis as unknown as Record<string, unknown>;
+    cachedAdvisorBySymbol.set(symbol, analysis as unknown as Record<string, unknown>);
     return res.json(analysis);
   });
 
@@ -326,6 +345,46 @@ export function createApiRouter(deps?: {
     return res.json(buildStatusPayload());
   });
 
+  router.post('/engine/symbol', requireAdminAuth, (req, res) => {
+    const rawSymbol = req.body?.symbol;
+    if (!isValidSpotSymbol(rawSymbol)) {
+      return res.status(400).json({
+        error: 'INVALID_SPOT_SYMBOL',
+        message: `El par debe pertenecer al universo Spot soportado: ${SUPPORTED_SPOT_SYMBOLS.join(', ')}`,
+      });
+    }
+    const rawStrategy = req.body?.strategy_id;
+    try {
+      bridge.setPrimarySymbol(rawSymbol);
+      if (
+        rawStrategy === 'trend_following_v1' ||
+        rawStrategy === 'mean_reversion_v1' ||
+        rawStrategy === 'range_breakout_v1'
+      ) {
+        bridge.setActiveStrategyId(rawStrategy);
+      }
+      const reports = bridge.getCachedOrRunBacktests(rawSymbol);
+      if (bridge.isPythonConnected() && !bridge.getKillSwitchState().active) {
+        bridge.runPaperStep(rawSymbol);
+      }
+      return res.json({
+        status: buildStatusPayload(),
+        portfolio: bridge.getPortfolioSummary(),
+        reports,
+        scanner: bridge.getMarketScanner(),
+        last_signal: bridge.getLastSignal(rawSymbol),
+      });
+    } catch (err) {
+      return res.status(503).json({
+        error: 'SYMBOL_SWITCH_FAILED',
+        message:
+          err instanceof Error
+            ? err.message
+            : 'No fue posible cambiar el par activo en el motor cuantitativo.',
+      });
+    }
+  });
+
   router.post('/engine/data-provider', requireAdminAuth, (req, res) => {
     const rawProvider = req.body?.provider;
     if (rawProvider !== 'binance_public' && rawProvider !== 'synthetic_deterministic') {
@@ -334,7 +393,7 @@ export function createApiRouter(deps?: {
         message: 'El proveedor debe ser "binance_public" o "synthetic_deterministic".',
       });
     }
-    const targetSymbol = req.body?.symbol === 'ETH/USDT' ? 'ETH/USDT' : 'BTC/USDT';
+    const targetSymbol = resolveSymbol(req.body?.symbol);
     try {
       bridge.setDataProvider(rawProvider);
       if (bridge.isPythonConnected()) {
@@ -344,6 +403,7 @@ export function createApiRouter(deps?: {
       return res.json({
         status: buildStatusPayload(),
         portfolio: bridge.getPortfolioSummary(),
+        scanner: bridge.getMarketScanner(),
         last_signal: bridge.getLastSignal(targetSymbol),
       });
     } catch (err) {
@@ -369,7 +429,7 @@ export function createApiRouter(deps?: {
         message: 'El perfil debe ser "conservative", "balanced" o "aggressive".',
       });
     }
-    const targetSymbol = req.body?.symbol === 'ETH/USDT' ? 'ETH/USDT' : 'BTC/USDT';
+    const targetSymbol = resolveSymbol(req.body?.symbol);
     try {
       bridge.setRiskProfile(rawProfile);
       if (bridge.isPythonConnected()) {
@@ -379,6 +439,7 @@ export function createApiRouter(deps?: {
       return res.json({
         status: buildStatusPayload(),
         portfolio: bridge.getPortfolioSummary(),
+        scanner: bridge.getMarketScanner(),
         last_signal: bridge.getLastSignal(targetSymbol),
       });
     } catch (err) {
@@ -400,11 +461,13 @@ export function createApiRouter(deps?: {
       res.setHeader('Content-Disposition', 'attachment; filename="auditoria_decisiones_bot.csv"');
       return res.send(csv);
     }
-    const reports = bridge.getCachedOrRunBacktests('BTC/USDT');
+    const reports = bridge.getCachedOrRunBacktests(bridge.getPrimarySymbol());
     const payload = {
       exported_at_utc: new Date().toISOString(),
       mode: bridge.getEffectiveMode(),
+      active_symbol: bridge.getPrimarySymbol(),
       portfolio: bridge.getPortfolioSummary(),
+      scanner: bridge.getMarketScanner(),
       decision_history: auditRepo.getDecisionHistory(200),
       backtests: reports,
     };

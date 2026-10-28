@@ -97,10 +97,12 @@ class OrderExecutionEngine:
             self._unknown_state_order_ids.add(client_order_id)
             return record
 
+        from trading_bot.data import round_price
+
         fill_price = (
-            round(reference_price * (1.0 + slippage_rate), 2)
+            round_price(reference_price * (1.0 + slippage_rate))
             if side == "BUY"
-            else round(reference_price * (1.0 - slippage_rate), 2)
+            else round_price(reference_price * (1.0 - slippage_rate))
         )
 
         ratio = (

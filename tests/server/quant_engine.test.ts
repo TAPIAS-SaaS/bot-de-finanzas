@@ -91,6 +91,16 @@ test('PythonEngineBridge arranca en modo paper, ejecuta backtests 60/20/20 y apl
   });
   assert.equal(rejectedKill.approved, false);
   assert.equal(rejectedKill.reason_code, 'KILL_SWITCH_ACTIVE');
+
+  // Verificar Radar Escáner Multi-Moneda (14 pares Spot de alta liquidez y alto movimiento)
+  const scanner = bridge.getMarketScanner();
+  assert.equal(scanner.length, 14);
+  assert.equal(scanner[0].net_return_pct >= scanner[scanner.length - 1].net_return_pct, true);
+  assert.equal(scanner.some((r) => r.symbol === 'PEPE/USDT'), true);
+  assert.equal(scanner.some((r) => r.symbol === 'INJ/USDT'), true);
+  assert.equal(scanner.some((r) => r.symbol === 'RENDER/USDT'), true);
+  assert.equal(scanner.some((r) => r.symbol === 'WIF/USDT'), true);
+  assert.equal(scanner.some((r) => r.symbol === 'SOL/USDT'), true);
 });
 
 test('ServerGeminiAdvisor valida esquema JSON estricto y rechaza estrategias fuera de lista', () => {

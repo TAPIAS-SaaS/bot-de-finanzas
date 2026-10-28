@@ -12,9 +12,11 @@ import type {
   DecisionAuditRowDTO,
   EngineStatusDTO,
   ForecastComparisonDTO,
+  MarketScannerRowDTO,
   PortfolioSummaryDTO,
   RiskDecisionDTO,
   RiskProfileType,
+  SpotSymbol,
   VirtualPositionDTO,
 } from './shared/types';
 
@@ -30,37 +32,42 @@ export function App() {
   const [status, setStatus] = useState<EngineStatusDTO | null>(null);
   const [portfolio, setPortfolio] = useState<PortfolioSummaryDTO | null>(null);
   const [positions, setPositions] = useState<VirtualPositionDTO[]>([]);
+  const [scanner, setScanner] = useState<MarketScannerRowDTO[]>([]);
   const [backtests, setBacktests] = useState<BacktestReportDTO[]>([]);
   const [decisions, setDecisions] = useState<DecisionAuditRowDTO[]>([]);
   const [advisor, setAdvisor] = useState<AdvisorAnalysisDTO | null>(null);
   const [forecast, setForecast] = useState<ForecastComparisonDTO | null>(null);
-  const [symbol, setSymbol] = useState<'BTC/USDT' | 'ETH/USDT'>('BTC/USDT');
+  const [symbol, setSymbol] = useState<SpotSymbol>('SOL/USDT');
   const [isBusy, setIsBusy] = useState<boolean>(false);
   const [bannerNotice, setBannerNotice] = useState<string | null>(null);
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
 
-  const loadDashboardData = useCallback(async (targetSymbol: 'BTC/USDT' | 'ETH/USDT' = symbol) => {
+  const loadDashboardData = useCallback(async (targetSymbol?: SpotSymbol) => {
     try {
       setErrorBanner(null);
-      const [statusRes, portRes, posRes, btRes, tradesRes, fcRes, aiRes] = await Promise.all([
-        fetch('/api/status'),
-        fetch('/api/portfolio'),
-        fetch('/api/positions'),
-        fetch(`/api/backtests?symbol=${encodeURIComponent(targetSymbol)}`),
-        fetch(`/api/trades?symbol=${encodeURIComponent(targetSymbol)}`),
-        fetch(`/api/forecasts?symbol=${encodeURIComponent(targetSymbol)}`),
-        fetch(`/api/ai/analysis?symbol=${encodeURIComponent(targetSymbol)}`),
-      ]);
+      const qSym = targetSymbol ? `?symbol=${encodeURIComponent(targetSymbol)}` : '';
+      const [statusRes, portRes, posRes, scanRes, btRes, tradesRes, fcRes, aiRes] =
+        await Promise.all([
+          fetch('/api/status'),
+          fetch('/api/portfolio'),
+          fetch('/api/positions'),
+          fetch('/api/scanner'),
+          fetch(`/api/backtests${qSym}`),
+          fetch(`/api/trades${qSym}`),
+          fetch(`/api/forecasts${qSym}`),
+          fetch(`/api/ai/analysis${qSym}`),
+        ]);
 
       if (!statusRes.ok || !portRes.ok) {
         throw new Error('Error al comunicar con el servidor backend.');
       }
 
-      const [statusData, portData, posData, btData, tradesData, fcData, aiData] =
+      const [statusData, portData, posData, scanData, btData, tradesData, fcData, aiData] =
         await Promise.all([
           statusRes.json(),
           portRes.json(),
           posRes.json(),
+          scanRes.json(),
           btRes.json(),
           tradesRes.json(),
           fcRes.json(),
@@ -68,8 +75,12 @@ export function App() {
         ]);
 
       setStatus(statusData);
+      if (statusData?.primary_symbol) {
+        setSymbol(statusData.primary_symbol);
+      }
       setPortfolio(portData);
       setPositions(posData.positions || []);
+      setScanner(scanData.scanner || []);
       setBacktests(btData.reports || []);
       setDecisions(tradesData.decision_history || []);
       setForecast(fcData);
@@ -81,11 +92,41 @@ export function App() {
           : 'Pérdida de conexión con el servidor web. Nuevas entradas bloqueadas.'
       );
     }
-  }, [symbol]);
+  }, []);
 
   useEffect(() => {
-    loadDashboardData('BTC/USDT');
+    loadDashboardData();
   }, [loadDashboardData]);
+
+  const handleSelectSymbol = async (targetSymbol: SpotSymbol, strategyId?: string) => {
+    setIsBusy(true);
+    setBannerNotice(null);
+    setErrorBanner(null);
+    try {
+      setSymbol(targetSymbol);
+      const res = await fetch('/api/engine/symbol', {
+        method: 'POST',
+        headers: ADMIN_HEADERS,
+        body: JSON.stringify({ symbol: targetSymbol, strategy_id: strategyId }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.message || 'No fue posible cambiar la moneda Spot activa.');
+      }
+      setStatus(data.status);
+      setPortfolio(data.portfolio);
+      setBacktests(data.reports || []);
+      setScanner(data.scanner || []);
+      await loadDashboardData(targetSymbol);
+      setBannerNotice(
+        `Par Spot activo cambiado a ${targetSymbol}${strategyId ? ` (${strategyId})` : ''} — Curva y métricas actualizadas.`
+      );
+    } catch (err) {
+      setErrorBanner(err instanceof Error ? err.message : 'Error al cambiar moneda Spot');
+    } finally {
+      setIsBusy(false);
+    }
+  };
 
   const handleRunPaperStep = async () => {
     setIsBusy(true);
@@ -182,6 +223,7 @@ export function App() {
       }
       setStatus(data.status);
       setPortfolio(data.portfolio);
+      if (data.scanner) setScanner(data.scanner);
       await loadDashboardData(symbol);
       const priceLabel = data.last_signal?.reference_price
         ? ` — Último cierre ${symbol}: $${Number(data.last_signal.reference_price).toLocaleString('es-CO')} USDT`
@@ -214,11 +256,12 @@ export function App() {
       }
       setStatus(data.status);
       setPortfolio(data.portfolio);
+      if (data.scanner) setScanner(data.scanner);
       await loadDashboardData(symbol);
       const labels: Record<RiskProfileType, string> = {
         conservative: 'Modo Conservador (0.50% riesgo/op · 50% exposición máx)',
         balanced: 'Modo Moderado (1.25% riesgo/op · 75% exposición máx)',
-        aggressive: 'Modo Arriesgado Alta Convicción v1.3 (2.00% riesgo/op · 95% exposición Spot)',
+        aggressive: 'Modo Arriesgado Alta Convicción v1.4 (2.00% riesgo/op · 95% exposición Spot)',
       };
       setBannerNotice(`Perfil actualizado a ${labels[riskProfile]} y backtests recalculados.`);
     } catch (err) {
@@ -270,7 +313,7 @@ export function App() {
   };
 
   const handleRunBacktests = async (
-    targetSymbol: 'BTC/USDT' | 'ETH/USDT',
+    targetSymbol: SpotSymbol,
     strategyId: string
   ) => {
     setIsBusy(true);
@@ -287,6 +330,7 @@ export function App() {
         throw new Error(data.message || 'Error al ejecutar backtest en motor Python.');
       }
       setBacktests(data.reports || []);
+      if (data.scanner) setScanner(data.scanner);
       await loadDashboardData(targetSymbol);
       setBannerNotice(
         `Backtest reproducible 60/20/20 completado para ${targetSymbol} (${strategyId}).`
@@ -299,7 +343,7 @@ export function App() {
   };
 
   const handleSimulateRisk = async (params: {
-    symbol: 'BTC/USDT' | 'ETH/USDT';
+    symbol: SpotSymbol;
     reference_price: number;
     proposed_stop: number;
     equity_usdt: number;
@@ -431,6 +475,7 @@ export function App() {
       {status && (
         <ModeBanner
           status={status}
+          onSelectSymbol={(sym) => handleSelectSymbol(sym)}
           onToggleConnectivity={handleToggleConnectivity}
           onToggleDataProvider={handleToggleDataProvider}
           onChangeRiskProfile={handleChangeRiskProfile}
@@ -477,7 +522,9 @@ export function App() {
                 status={status}
                 portfolio={portfolio}
                 positions={positions}
+                scanner={scanner}
                 activeBacktest={activeBacktest}
+                onSelectScannerAsset={(sym, stratId) => handleSelectSymbol(sym, stratId)}
                 onRunPaperStep={handleRunPaperStep}
                 onTogglePaperActive={handleTogglePaperActive}
                 onNavigateTab={(t) => setActiveTab(t)}

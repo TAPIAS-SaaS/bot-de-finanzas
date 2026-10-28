@@ -5,6 +5,7 @@
 
 import type { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
+import { SUPPORTED_SPOT_SYMBOLS } from '../../src/shared/types';
 
 const requestCounts = new Map<string, { count: number; resetAt: number }>();
 
@@ -49,15 +50,17 @@ export function requireAdminAuth(req: Request, res: Response, next: NextFunction
   return next();
 }
 
+export const SpotSymbolEnum = z.enum(SUPPORTED_SPOT_SYMBOLS);
+
 export const RunBacktestSchema = z.object({
-  symbol: z.enum(['BTC/USDT', 'ETH/USDT']).default('BTC/USDT'),
+  symbol: SpotSymbolEnum.default('BTC/USDT'),
   strategy_id: z
     .enum(['all', 'trend_following_v1', 'mean_reversion_v1', 'range_breakout_v1'])
     .default('all'),
 });
 
 export const PaperStepSchema = z.object({
-  symbol: z.enum(['BTC/USDT', 'ETH/USDT']).default('BTC/USDT'),
+  symbol: SpotSymbolEnum.default('BTC/USDT'),
   strategy_id: z
     .enum(['trend_following_v1', 'mean_reversion_v1', 'range_breakout_v1'])
     .optional(),
@@ -68,7 +71,7 @@ export const KillSwitchResumeSchema = z.object({
 });
 
 export const RiskSimulationSchema = z.object({
-  symbol: z.enum(['BTC/USDT', 'ETH/USDT']).default('BTC/USDT'),
+  symbol: SpotSymbolEnum.default('BTC/USDT'),
   reference_price: z.number().positive(),
   proposed_stop: z.number().positive(),
   equity_usdt: z.number().positive(),

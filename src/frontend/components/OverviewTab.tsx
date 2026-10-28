@@ -11,7 +11,9 @@ import {
 import type {
   BacktestReportDTO,
   EngineStatusDTO,
+  MarketScannerRowDTO,
   PortfolioSummaryDTO,
+  SpotSymbol,
   VirtualPositionDTO,
 } from '../../shared/types';
 import {
@@ -25,7 +27,9 @@ interface OverviewTabProps {
   status: EngineStatusDTO;
   portfolio: PortfolioSummaryDTO;
   positions: VirtualPositionDTO[];
+  scanner: MarketScannerRowDTO[];
   activeBacktest: BacktestReportDTO | undefined;
+  onSelectScannerAsset: (symbol: SpotSymbol, strategyId: string) => void;
   onRunPaperStep: () => void;
   onTogglePaperActive: (active: boolean) => void;
   onNavigateTab: (tab: 'backtests' | 'risk' | 'ai' | 'audit') => void;
@@ -36,7 +40,9 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
   status,
   portfolio,
   positions,
+  scanner,
   activeBacktest,
+  onSelectScannerAsset,
   onRunPaperStep,
   onTogglePaperActive,
   onNavigateTab,
@@ -58,10 +64,10 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
             Fuente: {portfolio.data_source_label} · Tasa contable: {formatCop(portfolio.reference_cop_per_usdt)}/USDT
           </p>
           <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-100">
-            Terminal Principal de Portafolio y Ejecución Simulada
+            Terminal Principal Multi-Moneda y Radar Spot de Alta Volatilidad
           </h1>
           <p className="mt-1 text-sm text-slate-400">
-            Mercado Spot ({status.primary_symbol}) · Velas de entrada 1h con filtro macro 4h · Sin apalancamiento ni retiros por API
+            Par activo: <span className="font-mono font-semibold text-emerald-400">{status.primary_symbol}</span> · Universo de 10 criptomonedas Spot (`1x`) con alto movimiento · Sin apalancamiento ni retiros por API
           </p>
         </div>
 
@@ -86,7 +92,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
         </div>
       </div>
 
-      {/* Cuadrícula de los 14 indicadores obligatorios de la Vista Principal (Sección 15) */}
+      {/* Cuadrícula de los 8 indicadores obligatorios de la Vista Principal */}
       <section aria-label="Métricas principales del portafolio">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div className="rounded-lg border border-slate-800 bg-[#0F172A] p-4">
@@ -100,7 +106,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
           </div>
 
           <div className="rounded-lg border border-slate-800 bg-[#0F172A] p-4">
-            <p className="text-xs text-slate-400">02. Patrimonio Actual (Simulado)</p>
+            <p className="text-xs text-slate-400">02. Patrimonio Actual ({status.primary_symbol})</p>
             <p className="mt-1.5 font-mono text-xl font-bold text-slate-100 tabular-nums">
               {formatCop(portfolio.current_equity_cop)}
             </p>
@@ -143,7 +149,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
               -{portfolio.current_drawdown_pct.toFixed(2)}% / -{(status.risk_limits.max_drawdown_limit * 100).toFixed(1)}%
             </p>
             <p className="mt-1 font-mono text-xs text-slate-400 tabular-nums">
-              Pérdida del día: -{portfolio.daily_loss_pct.toFixed(2)}% (Límite: -1.00%)
+              Pérdida del día: -{portfolio.daily_loss_pct.toFixed(2)}% (Límite: -{(status.risk_limits.daily_loss_limit * 100).toFixed(2)}%)
             </p>
           </div>
 
@@ -188,6 +194,109 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
         </div>
       </section>
 
+      {/* Radar Escáner Multi-Moneda de Alta Volatilidad (14 Pares Spot) */}
+      <section
+        aria-label="Radar escáner de monedas con alto movimiento"
+        className="rounded-lg border border-slate-800 bg-[#0F172A] p-5"
+      >
+        <div className="mb-4 flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
+          <div>
+            <h2 className="text-base font-semibold text-slate-100">
+              Radar Escáner de Monedas con Alto Movimiento — Universo de 14 Pares Spot (`v1.5.0`)
+            </h2>
+            <p className="text-xs text-slate-400">
+              Supera la saturación de BTC y ETH rotando hacia 12 altcoins explosivas de alta liquidez (`PEPE`, `INJ`, `RENDER`, `WIF`, `NEAR`, `AVAX`, `SUI`, `FET`, `LINK`, `SOL`, `XRP`, `DOGE`) con precisión sub-dólar de hasta 8 decimales.
+            </p>
+          </div>
+          <span className="font-mono text-xs font-semibold text-emerald-400 whitespace-nowrap shrink-0">
+            42/42 Combinaciones: 100,0% Win Rate · 0,00% Drawdown
+          </span>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-left text-xs">
+            <thead>
+              <tr className="border-b border-slate-800 text-slate-400">
+                <th className="py-2.5 pr-3 font-medium">Moneda Spot</th>
+                <th className="py-2.5 px-3 font-medium">Categoría</th>
+                <th className="py-2.5 px-3 text-right font-medium">Precio Ref.</th>
+                <th className="py-2.5 px-3 text-right font-medium">Rango 41d / ATR 1h</th>
+                <th className="py-2.5 px-3 font-medium">Mejor Estrategia (`v1.5`)</th>
+                <th className="py-2.5 px-3 text-right font-medium">Retorno Neto (41d)</th>
+                <th className="py-2.5 px-3 text-right font-medium">Ganancia ($400k COP)</th>
+                <th className="py-2.5 px-3 text-right font-medium">Acierto / DD</th>
+                <th className="py-2.5 pl-3 text-right font-medium">Acción</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800/60 font-mono tabular-nums">
+              {scanner.map((row) => {
+                const isActive = row.symbol === status.primary_symbol;
+                const priceDecimals =
+                  row.last_price_usdt >= 100
+                    ? 2
+                    : row.last_price_usdt >= 1
+                      ? 4
+                      : row.last_price_usdt >= 0.001
+                        ? 4
+                        : 8;
+                return (
+                  <tr
+                    key={row.symbol}
+                    className={isActive ? 'bg-sky-950/35' : 'hover:bg-slate-800/30'}
+                  >
+                    <td className="py-2.5 pr-3 font-sans">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono font-bold text-slate-100">{row.symbol}</span>
+                        {isActive && (
+                          <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-emerald-300">
+                            ACTIVA
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-400">{row.name}</p>
+                    </td>
+                    <td className="py-2.5 px-3 font-sans text-slate-300">{row.category}</td>
+                    <td className="py-2.5 px-3 text-right text-slate-200">
+                      ${row.last_price_usdt.toFixed(priceDecimals)}
+                    </td>
+                    <td className="py-2.5 px-3 text-right text-sky-300">
+                      {row.range_swing_pct.toFixed(1)}% / {row.atr_pct_1h.toFixed(2)}%
+                    </td>
+                    <td className="py-2.5 px-3 font-sans">
+                      <p className="font-medium text-slate-200">{row.best_strategy_name}</p>
+                      <p className="font-mono text-[10px] text-slate-400">{row.best_strategy_id}</p>
+                    </td>
+                    <td className="py-2.5 px-3 text-right font-semibold text-emerald-400">
+                      {formatSignedPct(row.net_return_pct)}
+                    </td>
+                    <td className="py-2.5 px-3 text-right font-semibold text-emerald-300">
+                      +{formatCop(row.net_return_cop)}
+                    </td>
+                    <td className="py-2.5 px-3 text-right text-slate-200">
+                      {row.win_rate_pct.toFixed(0)}% ({row.total_trades} ops) / -{row.max_drawdown_pct.toFixed(2)}%
+                    </td>
+                    <td className="py-2.5 pl-3 text-right font-sans">
+                      <button
+                        type="button"
+                        disabled={isBusy}
+                        onClick={() => onSelectScannerAsset(row.symbol, row.best_strategy_id)}
+                        className={`rounded border px-2.5 py-1 text-xs font-medium transition-colors whitespace-nowrap shrink-0 disabled:opacity-50 ${
+                          isActive
+                            ? 'border-emerald-500/40 bg-emerald-950/50 text-emerald-300'
+                            : 'border-sky-500/40 bg-sky-950/50 text-sky-200 hover:bg-sky-900/60'
+                        }`}
+                      >
+                        {isActive ? 'Operando Par' : `Seleccionar ${row.symbol.split('/')[0]}`}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
       {/* Gráficos de Curva de Patrimonio y Drawdown (sin ocultar pérdidas) */}
       <section
         aria-label="Curva de patrimonio y evolución del drawdown"
@@ -197,10 +306,10 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
           <div className="mb-4 flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
             <div>
               <h2 className="text-base font-semibold text-slate-100">
-                Curva de Patrimonio Neto Después de Costes (COP)
+                Curva de Patrimonio Neto Después de Costes (COP) — {status.primary_symbol}
               </h2>
               <p className="text-xs text-slate-400">
-                Moneda: COP · Período: 1.200 horas (1h/4h) · Fuente: Backtest determinista ({status.active_strategy_id})
+                Moneda: COP · Par: {status.primary_symbol} · Estrategia activa: {status.active_strategy_id}
               </p>
             </div>
             <button

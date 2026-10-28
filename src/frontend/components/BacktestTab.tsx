@@ -1,5 +1,9 @@
-import React, { useState } from 'react';
-import type { BacktestReportDTO } from '../../shared/types';
+import React, { useEffect, useState } from 'react';
+import {
+  SUPPORTED_SPOT_SYMBOLS,
+  type BacktestReportDTO,
+  type SpotSymbol,
+} from '../../shared/types';
 import {
   formatCop,
   formatSignedPct,
@@ -8,10 +12,10 @@ import {
 } from '../utils/formatters';
 
 interface BacktestTabProps {
-  symbol: 'BTC/USDT' | 'ETH/USDT';
+  symbol: SpotSymbol;
   reports: BacktestReportDTO[];
   activeStrategyId: string;
-  onRunBacktests: (symbol: 'BTC/USDT' | 'ETH/USDT', strategyId: string) => void;
+  onRunBacktests: (symbol: SpotSymbol, strategyId: string) => void;
   isBusy: boolean;
 }
 
@@ -22,8 +26,16 @@ export const BacktestTab: React.FC<BacktestTabProps> = ({
   onRunBacktests,
   isBusy,
 }) => {
-  const [selectedSymbol, setSelectedSymbol] = useState<'BTC/USDT' | 'ETH/USDT'>(symbol);
+  const [selectedSymbol, setSelectedSymbol] = useState<SpotSymbol>(symbol);
   const [selectedReportId, setSelectedReportId] = useState<string>(activeStrategyId);
+
+  useEffect(() => {
+    setSelectedSymbol(symbol);
+  }, [symbol]);
+
+  useEffect(() => {
+    setSelectedReportId(activeStrategyId);
+  }, [activeStrategyId]);
 
   const detailedReport =
     reports.find((r) => r.strategy_id === selectedReportId) || reports[0];
@@ -36,10 +48,10 @@ export const BacktestTab: React.FC<BacktestTabProps> = ({
             Partición cronológica: 60% Desarrollo · 20% Validación · 20% Prueba Fuera de Muestra (Out-of-Sample)
           </p>
           <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-100">
-            Backtesting Reproducible y Comparación de Estrategias
+            Backtesting Reproducible Multi-Moneda y Comparación de Estrategias (`v1.4.0`)
           </h1>
           <p className="mt-1 text-sm text-slate-400">
-            Ejecución conservadora en la apertura de la siguiente vela (sin look-ahead bias), con comisión 0.10%/lado y deslizamiento 0.05%/lado.
+            Ejecución conservadora en la apertura de la siguiente vela (sin look-ahead bias), con comisión 0.10%/lado y deslizamiento 0.05%/lado en los 10 pares Spot.
           </p>
         </div>
 
@@ -49,11 +61,14 @@ export const BacktestTab: React.FC<BacktestTabProps> = ({
             <select
               aria-label="Seleccionar par spot para backtesting"
               value={selectedSymbol}
-              onChange={(e) => setSelectedSymbol(e.target.value as 'BTC/USDT' | 'ETH/USDT')}
+              onChange={(e) => setSelectedSymbol(e.target.value as SpotSymbol)}
               className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 font-mono text-xs text-slate-100"
             >
-              <option value="BTC/USDT">BTC/USDT</option>
-              <option value="ETH/USDT">ETH/USDT</option>
+              {SUPPORTED_SPOT_SYMBOLS.map((sym) => (
+                <option key={sym} value={sym}>
+                  {sym}
+                </option>
+              ))}
             </select>
           </label>
 
@@ -315,32 +330,42 @@ export const BacktestTab: React.FC<BacktestTabProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60 font-mono tabular-nums">
-                {detailedReport.trades.slice(-15).reverse().map((tr) => (
-                  <tr key={tr.trade_id} className="hover:bg-slate-800/30">
-                    <td className="py-2.5 pr-3 text-slate-200">{tr.trade_id}</td>
-                    <td className="py-2.5 px-3 text-slate-400">{tr.segment}</td>
-                    <td className="py-2.5 px-3 text-slate-300">
-                      {formatUtcTimestamp(tr.entry_timestamp)}
-                    </td>
-                    <td className="py-2.5 px-3 text-right text-slate-200">
-                      {formatUsdt(tr.entry_price)}
-                    </td>
-                    <td className="py-2.5 px-3 text-right text-slate-200">
-                      {formatUsdt(tr.exit_price)}
-                    </td>
-                    <td className="py-2.5 px-3 text-right text-slate-400">
-                      {formatUsdt(tr.fees_usdt, 4)}
-                    </td>
-                    <td
-                      className={`py-2.5 px-3 text-right font-semibold ${
-                        tr.net_pnl_usdt >= 0 ? 'text-emerald-400' : 'text-red-400'
-                      }`}
-                    >
-                      {formatUsdt(tr.net_pnl_usdt, 4)} ({formatSignedPct(tr.net_return_pct)})
-                    </td>
-                    <td className="py-2.5 pl-3 text-slate-300">{tr.exit_reason}</td>
-                  </tr>
-                ))}
+                {detailedReport.trades.slice(-15).reverse().map((tr) => {
+                  const pDec =
+                    tr.entry_price >= 100
+                      ? 2
+                      : tr.entry_price >= 1
+                        ? 4
+                        : tr.entry_price >= 0.001
+                          ? 6
+                          : 8;
+                  return (
+                    <tr key={tr.trade_id} className="hover:bg-slate-800/30">
+                      <td className="py-2.5 pr-3 text-slate-200">{tr.trade_id}</td>
+                      <td className="py-2.5 px-3 text-slate-400">{tr.segment}</td>
+                      <td className="py-2.5 px-3 text-slate-300">
+                        {formatUtcTimestamp(tr.entry_timestamp)}
+                      </td>
+                      <td className="py-2.5 px-3 text-right text-slate-200">
+                        {formatUsdt(tr.entry_price, pDec)}
+                      </td>
+                      <td className="py-2.5 px-3 text-right text-slate-200">
+                        {formatUsdt(tr.exit_price, pDec)}
+                      </td>
+                      <td className="py-2.5 px-3 text-right text-slate-400">
+                        {formatUsdt(tr.fees_usdt, 4)}
+                      </td>
+                      <td
+                        className={`py-2.5 px-3 text-right font-semibold ${
+                          tr.net_pnl_usdt >= 0 ? 'text-emerald-400' : 'text-red-400'
+                        }`}
+                      >
+                        {formatUsdt(tr.net_pnl_usdt, 4)} ({formatSignedPct(tr.net_return_pct)})
+                      </td>
+                      <td className="py-2.5 pl-3 text-slate-300">{tr.exit_reason}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

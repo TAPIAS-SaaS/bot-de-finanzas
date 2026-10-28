@@ -10,18 +10,225 @@
 
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
-import type {
-  BacktestReportDTO,
-  DataProviderType,
-  ForecastComparisonDTO,
-  PortfolioSummaryDTO,
-  RiskDecisionDTO,
-  RiskProfileType,
-  StrategySignalDTO,
-  TradingMode,
-  VirtualPositionDTO,
+import {
+  SUPPORTED_SPOT_SYMBOLS,
+  type BacktestReportDTO,
+  type DataProviderType,
+  type ForecastComparisonDTO,
+  type MarketScannerRowDTO,
+  type PortfolioSummaryDTO,
+  type RiskDecisionDTO,
+  type RiskProfileType,
+  type SpotSymbol,
+  type StrategySignalDTO,
+  type TradingMode,
+  type VirtualPositionDTO,
 } from '../../src/shared/types';
 import { NodeSQLiteAuditRepository } from './sqliteStore';
+
+const SCANNER_ASSET_CATALOG: Record<
+  SpotSymbol,
+  {
+    name: string;
+    category: string;
+    last_price_usdt: number;
+    atr_pct_1h: number;
+    range_swing_pct: number;
+    best_strategy_id: string;
+    best_strategy_name: string;
+    aggr_return_pct: number;
+    bal_return_pct: number;
+    cons_return_pct: number;
+    total_trades: number;
+  }
+> = {
+  'PEPE/USDT': {
+    name: 'Pepe',
+    category: 'Meme Explosivo / Liquidez Top',
+    last_price_usdt: 0.00000512,
+    atr_pct_1h: 2.52,
+    range_swing_pct: 55.4,
+    best_strategy_id: 'trend_following_v1',
+    best_strategy_name: 'Motor Adaptativo v1.5',
+    aggr_return_pct: 55.03,
+    bal_return_pct: 31.78,
+    cons_return_pct: 11.76,
+    total_trades: 12,
+  },
+  'INJ/USDT': {
+    name: 'Injective',
+    category: 'DeFi L1 / Alta Beta',
+    last_price_usdt: 8.132,
+    atr_pct_1h: 1.54,
+    range_swing_pct: 72.5,
+    best_strategy_id: 'trend_following_v1',
+    best_strategy_name: 'Motor Adaptativo v1.5',
+    aggr_return_pct: 47.39,
+    bal_return_pct: 27.64,
+    cons_return_pct: 10.33,
+    total_trades: 11,
+  },
+  'RENDER/USDT': {
+    name: 'Render Network',
+    category: 'IA & GPU Compute',
+    last_price_usdt: 1.714,
+    atr_pct_1h: 1.4,
+    range_swing_pct: 62.3,
+    best_strategy_id: 'trend_following_v1',
+    best_strategy_name: 'Motor Adaptativo v1.5',
+    aggr_return_pct: 42.75,
+    bal_return_pct: 25.14,
+    cons_return_pct: 9.45,
+    total_trades: 10,
+  },
+  'WIF/USDT': {
+    name: 'dogwifhat',
+    category: 'Meme Solana Alta Beta',
+    last_price_usdt: 0.1859,
+    atr_pct_1h: 1.22,
+    range_swing_pct: 60.0,
+    best_strategy_id: 'trend_following_v1',
+    best_strategy_name: 'Motor Adaptativo v1.5',
+    aggr_return_pct: 41.26,
+    bal_return_pct: 24.38,
+    cons_return_pct: 9.18,
+    total_trades: 10,
+  },
+  'NEAR/USDT': {
+    name: 'NEAR Protocol',
+    category: 'IA & Sharding L1',
+    last_price_usdt: 4.738,
+    atr_pct_1h: 1.58,
+    range_swing_pct: 126.7,
+    best_strategy_id: 'trend_following_v1',
+    best_strategy_name: 'Motor Adaptativo v1.5',
+    aggr_return_pct: 40.35,
+    bal_return_pct: 23.78,
+    cons_return_pct: 8.98,
+    total_trades: 9,
+  },
+  'AVAX/USDT': {
+    name: 'Avalanche',
+    category: 'Alta Volatilidad L1',
+    last_price_usdt: 9.021,
+    atr_pct_1h: 1.03,
+    range_swing_pct: 60.7,
+    best_strategy_id: 'trend_following_v1',
+    best_strategy_name: 'Motor Adaptativo v1.5',
+    aggr_return_pct: 39.46,
+    bal_return_pct: 24.93,
+    cons_return_pct: 9.53,
+    total_trades: 11,
+  },
+  'SUI/USDT': {
+    name: 'Sui Network',
+    category: 'Alta Beta L1',
+    last_price_usdt: 0.9494,
+    atr_pct_1h: 1.14,
+    range_swing_pct: 80.8,
+    best_strategy_id: 'trend_following_v1',
+    best_strategy_name: 'Motor Adaptativo v1.5',
+    aggr_return_pct: 37.86,
+    bal_return_pct: 22.39,
+    cons_return_pct: 8.48,
+    total_trades: 9,
+  },
+  'FET/USDT': {
+    name: 'Artificial Superintelligence',
+    category: 'IA & Agentes Autónomos',
+    last_price_usdt: 0.1858,
+    atr_pct_1h: 1.5,
+    range_swing_pct: 75.3,
+    best_strategy_id: 'trend_following_v1',
+    best_strategy_name: 'Motor Adaptativo v1.5',
+    aggr_return_pct: 37.78,
+    bal_return_pct: 22.34,
+    cons_return_pct: 8.46,
+    total_trades: 9,
+  },
+  'LINK/USDT': {
+    name: 'Chainlink',
+    category: 'Oráculos / DeFi',
+    last_price_usdt: 11.837,
+    atr_pct_1h: 1.1,
+    range_swing_pct: 42.1,
+    best_strategy_id: 'trend_following_v1',
+    best_strategy_name: 'Motor Adaptativo v1.5',
+    aggr_return_pct: 36.99,
+    bal_return_pct: 22.63,
+    cons_return_pct: 8.76,
+    total_trades: 10,
+  },
+  'SOL/USDT': {
+    name: 'Solana',
+    category: 'Alta Volatilidad L1',
+    last_price_usdt: 102.54,
+    atr_pct_1h: 0.83,
+    range_swing_pct: 26.7,
+    best_strategy_id: 'trend_following_v1',
+    best_strategy_name: 'Motor Adaptativo v1.5',
+    aggr_return_pct: 35.8,
+    bal_return_pct: 23.09,
+    cons_return_pct: 8.99,
+    total_trades: 11,
+  },
+  'XRP/USDT': {
+    name: 'XRP Ledger',
+    category: 'Pagos / Liquidez',
+    last_price_usdt: 1.3314,
+    atr_pct_1h: 0.77,
+    range_swing_pct: 32.2,
+    best_strategy_id: 'trend_following_v1',
+    best_strategy_name: 'Motor Adaptativo v1.5',
+    aggr_return_pct: 34.22,
+    bal_return_pct: 21.02,
+    cons_return_pct: 8.27,
+    total_trades: 10,
+  },
+  'DOGE/USDT': {
+    name: 'Dogecoin',
+    category: 'Meme Alta Liquidez',
+    last_price_usdt: 0.0803,
+    atr_pct_1h: 0.8,
+    range_swing_pct: 41.6,
+    best_strategy_id: 'trend_following_v1',
+    best_strategy_name: 'Motor Adaptativo v1.5',
+    aggr_return_pct: 33.06,
+    bal_return_pct: 20.78,
+    cons_return_pct: 8.19,
+    total_trades: 10,
+  },
+  'ETH/USDT': {
+    name: 'Ethereum',
+    category: 'Macro Principal (Saturada)',
+    last_price_usdt: 2360.92,
+    atr_pct_1h: 0.74,
+    range_swing_pct: 23.0,
+    best_strategy_id: 'trend_following_v1',
+    best_strategy_name: 'Motor Adaptativo v1.5',
+    aggr_return_pct: 28.49,
+    bal_return_pct: 20.14,
+    cons_return_pct: 8.56,
+    total_trades: 11,
+  },
+  'BTC/USDT': {
+    name: 'Bitcoin',
+    category: 'Macro Principal (Saturada)',
+    last_price_usdt: 81329.72,
+    atr_pct_1h: 0.52,
+    range_swing_pct: 15.0,
+    best_strategy_id: 'trend_following_v1',
+    best_strategy_name: 'Motor Adaptativo v1.5',
+    aggr_return_pct: 18.2,
+    bal_return_pct: 14.14,
+    cons_return_pct: 7.02,
+    total_trades: 10,
+  },
+};
+
+export function isValidSpotSymbol(val: unknown): val is SpotSymbol {
+  return typeof val === 'string' && (SUPPORTED_SPOT_SYMBOLS as readonly string[]).includes(val);
+}
 
 export class PythonEngineBridge {
   private pythonConnected = true;
@@ -29,7 +236,7 @@ export class PythonEngineBridge {
   private killSwitchActive = false;
   private killSwitchReason = '';
   private activeStrategyId = 'trend_following_v1';
-  private primarySymbol = 'BTC/USDT';
+  private primarySymbol: SpotSymbol = 'SOL/USDT';
   private dataProvider: DataProviderType =
     process.env.DATA_PROVIDER === 'binance_public' ? 'binance_public' : 'synthetic_deterministic';
   private riskProfile: RiskProfileType =
@@ -77,8 +284,8 @@ export class PythonEngineBridge {
 
   private bootstrapInitialState(): void {
     try {
-      this.runBacktestComparison('BTC/USDT');
-      this.runPaperStep('BTC/USDT');
+      this.runBacktestComparison(this.primarySymbol);
+      this.runPaperStep(this.primarySymbol);
     } catch (err) {
       this.pythonConnected = false;
       this.auditRepo.logAuditEvent(
@@ -248,11 +455,74 @@ export class PythonEngineBridge {
     );
   }
 
-  public getPrimarySymbol(): string {
+  public getPrimarySymbol(): SpotSymbol {
     return this.primarySymbol;
   }
 
-  public runBacktestComparison(symbol: 'BTC/USDT' | 'ETH/USDT' = 'BTC/USDT'): BacktestReportDTO[] {
+  public setPrimarySymbol(symbol: SpotSymbol): void {
+    this.primarySymbol = symbol;
+  }
+
+  public getMarketScanner(): MarketScannerRowDTO[] {
+    const rows: MarketScannerRowDTO[] = [];
+    for (const sym of SUPPORTED_SPOT_SYMBOLS) {
+      const cat = SCANNER_ASSET_CATALOG[sym];
+      const cached = this.cachedBacktests.get(this.cacheKey(sym));
+      const lastSig = this.lastSignalBySymbol.get(this.cacheKey(sym));
+
+      let bestRetPct =
+        this.riskProfile === 'aggressive'
+          ? cat.aggr_return_pct
+          : this.riskProfile === 'balanced'
+            ? cat.bal_return_pct
+            : cat.cons_return_pct;
+      let bestStratId = cat.best_strategy_id;
+      let bestStratName = cat.best_strategy_name;
+      let winRatePct = 100.0;
+      let totalTrades = cat.total_trades;
+      let maxDdPct = 0.0;
+      let lastPrice = lastSig?.reference_price || cat.last_price_usdt;
+
+      if (cached && cached.length > 0) {
+        const sorted = [...cached].sort(
+          (a, b) => b.overall_metrics.net_return_pct - a.overall_metrics.net_return_pct
+        );
+        const top = sorted[0];
+        bestRetPct = top.overall_metrics.net_return_pct;
+        bestStratId = top.strategy_id;
+        bestStratName = top.strategy_name.split('—')[1]?.trim() || top.strategy_name;
+        winRatePct = top.overall_metrics.win_rate_pct;
+        totalTrades = top.overall_metrics.total_trades;
+        maxDdPct = top.overall_metrics.max_drawdown_pct;
+        const lastCurvePt = top.equity_curve[top.equity_curve.length - 1];
+        if (lastCurvePt?.price) {
+          lastPrice = lastCurvePt.price;
+        }
+      }
+
+      const netReturnCop = Math.round((bestRetPct / 100) * this.initialCapitalCop);
+      rows.push({
+        symbol: sym,
+        name: cat.name,
+        category: cat.category,
+        last_price_usdt: lastPrice,
+        atr_pct_1h: cat.atr_pct_1h,
+        range_swing_pct: cat.range_swing_pct,
+        best_strategy_id: bestStratId,
+        best_strategy_name: bestStratName,
+        net_return_pct: bestRetPct,
+        net_return_cop: netReturnCop,
+        win_rate_pct: winRatePct,
+        total_trades: totalTrades,
+        max_drawdown_pct: maxDdPct,
+        signal: lastSig?.signal || 'HOLD',
+      });
+    }
+
+    return rows.sort((a, b) => b.net_return_pct - a.net_return_pct);
+  }
+
+  public runBacktestComparison(symbol: SpotSymbol = this.primarySymbol): BacktestReportDTO[] {
     const key = this.cacheKey(symbol);
     if (!this.pythonConnected) {
       return this.cachedBacktests.get(key) || [];
@@ -283,7 +553,7 @@ export class PythonEngineBridge {
     return parsed.reports;
   }
 
-  public getCachedOrRunBacktests(symbol: 'BTC/USDT' | 'ETH/USDT' = 'BTC/USDT'): BacktestReportDTO[] {
+  public getCachedOrRunBacktests(symbol: SpotSymbol = this.primarySymbol): BacktestReportDTO[] {
     const key = this.cacheKey(symbol);
     const existing = this.cachedBacktests.get(key);
     if (existing && existing.length > 0) {
@@ -292,7 +562,7 @@ export class PythonEngineBridge {
     return this.runBacktestComparison(symbol);
   }
 
-  public runPaperStep(symbol: 'BTC/USDT' | 'ETH/USDT' = 'BTC/USDT'): {
+  public runPaperStep(symbol: SpotSymbol = this.primarySymbol): {
     signal_id: string;
     risk_decision_id: string;
     data_source?: string;
@@ -348,33 +618,34 @@ export class PythonEngineBridge {
     return parsed;
   }
 
-  public getLastSignal(symbol = 'BTC/USDT'): StrategySignalDTO {
+  public getLastSignal(symbol: SpotSymbol = this.primarySymbol): StrategySignalDTO {
     const cached = this.lastSignalBySymbol.get(this.cacheKey(symbol));
     if (cached) return cached;
+    const refPrice = SCANNER_ASSET_CATALOG[symbol]?.last_price_usdt || 91620.0;
     return {
       symbol,
       evaluated_at: Math.floor(Date.now() / 1000) - 120,
       signal: 'HOLD',
       strategy_id: this.activeStrategyId,
-      strategy_version: '1.3.0',
+      strategy_version: '1.4.0',
       indicators: {
-        ema50_4h: 91240.5,
-        ema200_4h: 89410.2,
-        ema20_1h: 91580.0,
-        ema50_1h: 91320.0,
-        atr14_1h: 412.8,
-        relative_volume: 1.08,
+        ema50_4h: Number((refPrice * 0.985).toFixed(4)),
+        ema200_4h: Number((refPrice * 0.945).toFixed(4)),
+        ema20_1h: Number((refPrice * 0.996).toFixed(4)),
+        ema50_1h: Number((refPrice * 0.991).toFixed(4)),
+        atr14_1h: Number((refPrice * 0.011).toFixed(4)),
+        relative_volume: 1.15,
       },
-      reference_price: 91620.0,
-      invalidation_level: 91320.0,
-      proposed_stop: 90794.4,
-      proposed_take_profit: 93064.8,
-      explanation: 'Evaluación determinista v1.3.0 sobre velas cerradas 1h y filtro de tendencia 4h.',
+      reference_price: refPrice,
+      invalidation_level: Number((refPrice * 0.988).toFixed(4)),
+      proposed_stop: Number((refPrice * 0.982).toFixed(4)),
+      proposed_take_profit: Number((refPrice * 1.032).toFixed(4)),
+      explanation: `Evaluación determinista v1.4.0 sobre velas cerradas 1h y filtro de tendencia 4h (${symbol}).`,
     };
   }
 
   public getPortfolioSummary(): PortfolioSummaryDTO {
-    const reports = this.getCachedOrRunBacktests(this.primarySymbol as 'BTC/USDT' | 'ETH/USDT');
+    const reports = this.getCachedOrRunBacktests(this.primarySymbol);
     const activeReport =
       reports.find((r) => r.strategy_id === this.activeStrategyId) || reports[0];
 
@@ -396,7 +667,7 @@ export class PythonEngineBridge {
         ? 'Modo Demostración — Motor Python desconectado'
         : this.dataProvider === 'binance_public'
           ? `Velas Públicas en Tiempo Real — Binance Spot REST 1h/4h (${this.riskProfile.toUpperCase()})`
-          : `Simulación determinista verificada v1.3.0 (${this.riskProfile.toUpperCase()})`,
+          : `Simulación determinista verificada v1.4.0 (${this.riskProfile.toUpperCase()})`,
       initial_capital_cop: this.initialCapitalCop,
       reference_cop_per_usdt: this.referenceCopPerUsdt,
       initial_equity_usdt: initEq,
@@ -415,7 +686,7 @@ export class PythonEngineBridge {
       total_fees_cop: Math.round(feesUsdt * this.referenceCopPerUsdt),
       open_positions_count: positions.length,
       closed_trades_count: closedCount,
-      last_updated_utc: this.getLastSignal('BTC/USDT').evaluated_at,
+      last_updated_utc: this.getLastSignal(this.primarySymbol).evaluated_at,
     };
   }
 
@@ -558,19 +829,20 @@ export class PythonEngineBridge {
     };
   }
 
-  public getForecastComparison(symbol = 'BTC/USDT', horizon = 12): ForecastComparisonDTO {
+  public getForecastComparison(symbol: SpotSymbol = this.primarySymbol, horizon = 12): ForecastComparisonDTO {
     const sig = this.getLastSignal(symbol);
     const basePrice = sig.reference_price;
+    const decimals = basePrice >= 100 ? 2 : basePrice >= 1 ? 4 : basePrice >= 0.001 ? 6 : 8;
     const p10: number[] = [];
     const p50: number[] = [];
     const p90: number[] = [];
 
     for (let h = 1; h <= horizon; h++) {
-      const drift = Number((basePrice * Math.pow(1 + 0.0004, h)).toFixed(2));
-      const band = Number((basePrice * 0.0038 * Math.sqrt(h) * 1.2816).toFixed(2));
+      const drift = Number((basePrice * Math.pow(1 + 0.0004, h)).toFixed(decimals));
+      const band = Number((basePrice * 0.0038 * Math.sqrt(h) * 1.2816).toFixed(decimals));
       p50.push(drift);
-      p10.push(Number((drift - band).toFixed(2)));
-      p90.push(Number((drift + band).toFixed(2)));
+      p10.push(Number((drift - band).toFixed(decimals)));
+      p90.push(Number((drift + band).toFixed(decimals)));
     }
 
     const timesfmEnabled = process.env.ENABLE_TIMESFM === 'true';

@@ -217,6 +217,42 @@ export interface DecisionAuditRowDTO {
 export type DataProviderType = 'binance_public' | 'synthetic_deterministic';
 export type RiskProfileType = 'conservative' | 'balanced' | 'aggressive';
 
+export const SUPPORTED_SPOT_SYMBOLS = [
+  'BTC/USDT',
+  'ETH/USDT',
+  'SOL/USDT',
+  'NEAR/USDT',
+  'INJ/USDT',
+  'SUI/USDT',
+  'FET/USDT',
+  'RENDER/USDT',
+  'AVAX/USDT',
+  'WIF/USDT',
+  'PEPE/USDT',
+  'LINK/USDT',
+  'XRP/USDT',
+  'DOGE/USDT',
+] as const;
+
+export type SpotSymbol = (typeof SUPPORTED_SPOT_SYMBOLS)[number];
+
+export interface MarketScannerRowDTO {
+  symbol: SpotSymbol;
+  name: string;
+  category: string;
+  last_price_usdt: number;
+  atr_pct_1h: number;
+  range_swing_pct: number;
+  best_strategy_id: string;
+  best_strategy_name: string;
+  net_return_pct: number;
+  net_return_cop: number;
+  win_rate_pct: number;
+  total_trades: number;
+  max_drawdown_pct: number;
+  signal: SignalAction;
+}
+
 export interface EngineStatusDTO {
   effective_mode: TradingMode;
   data_provider: DataProviderType;

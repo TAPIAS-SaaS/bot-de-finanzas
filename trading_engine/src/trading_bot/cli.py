@@ -8,6 +8,7 @@ import sys
 
 from trading_bot.api import run_stdlib_http_server
 from trading_bot.backtesting import run_backtest_for_strategy
+from trading_bot.config import SUPPORTED_SPOT_SYMBOLS
 from trading_bot.data import load_market_candles_for_engine
 from trading_bot.engine import TradingBotEngine
 
@@ -22,7 +23,7 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("status", help="Imprime el estado de salud y seguridad del motor en JSON")
 
     bt_parser = sub.add_parser("backtest", help="Ejecuta backtest reproducible 60/20/20")
-    bt_parser.add_argument("--symbol", default="BTC/USDT", choices=["BTC/USDT", "ETH/USDT"])
+    bt_parser.add_argument("--symbol", default="BTC/USDT", choices=SUPPORTED_SPOT_SYMBOLS)
     bt_parser.add_argument(
         "--strategy",
         default="all",
@@ -42,7 +43,7 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     step_parser = sub.add_parser("paper-step", help="Ejecuta un ciclo de evaluación Paper Trading")
-    step_parser.add_argument("--symbol", default="BTC/USDT", choices=["BTC/USDT", "ETH/USDT"])
+    step_parser.add_argument("--symbol", default="BTC/USDT", choices=SUPPORTED_SPOT_SYMBOLS)
     step_parser.add_argument(
         "--provider",
         default=None,

@@ -110,6 +110,36 @@ def align_4h_to_1h_without_lookahead(
     return closed_1h, closed_4h
 
 
+SYMBOL_BASE_PRICES: Dict[str, Tuple[float, int]] = {
+    "BTC/USDT": (88_000.0, 17),
+    "ETH/USDT": (3_100.0, 53),
+    "SOL/USDT": (102.50, 17),
+    "NEAR/USDT": (4.74, 53),
+    "INJ/USDT": (8.13, 53),
+    "SUI/USDT": (0.95, 17),
+    "FET/USDT": (0.186, 53),
+    "RENDER/USDT": (1.714, 53),
+    "AVAX/USDT": (9.02, 53),
+    "WIF/USDT": (0.186, 53),
+    "PEPE/USDT": (0.00512, 53),
+    "LINK/USDT": (11.84, 53),
+    "XRP/USDT": (1.33, 17),
+    "DOGE/USDT": (0.0805, 53),
+}
+
+
+def round_price(value: float) -> float:
+    """Redondea precios dinámicamente según la magnitud del activo (BTC vs Altcoins de centavos o micro-centavos)."""
+    abs_val = abs(value)
+    if abs_val >= 100.0:
+        return round(value, 2)
+    if abs_val >= 1.0:
+        return round(value, 4)
+    if abs_val >= 0.001:
+        return round(value, 6)
+    return round(value, 8)
+
+
 def generate_deterministic_market_series(
     symbol: str = "BTC/USDT",
     num_1h_bars: int = 1200,
@@ -120,8 +150,9 @@ def generate_deterministic_market_series(
     Simula regímenes realistas de tendencia alcista, rango lateral, retroceso y ruptura
     sin depender de conexión a internet para pruebas automatizadas y backtesting reproducible.
     """
-    base_price = 88_000.0 if symbol.startswith("BTC") else 3_100.0
-    seed_offset = 17 if symbol.startswith("BTC") else 53
+    base_price, seed_offset = SYMBOL_BASE_PRICES.get(
+        symbol, (88_000.0 if symbol.startswith("BTC") else 3_100.0, 17 if symbol.startswith("BTC") else 53)
+    )
     step_1h = 3600
     step_4h = 14400
 
@@ -145,12 +176,12 @@ def generate_deterministic_market_series(
             else:
                 drift = -0.0038 + 0.0015 * math.sin(i * 0.31)
 
-        open_p = round(price, 2)
-        close_p = round(max(base_price * 0.4, open_p * (1.0 + drift)), 2)
+        open_p = round_price(price)
+        close_p = round_price(max(base_price * 0.4, open_p * (1.0 + drift)))
         intrabody = abs(close_p - open_p)
-        wick = round(max(open_p * 0.0022, intrabody * 0.55), 2)
-        high_p = round(max(open_p, close_p) + wick, 2)
-        low_p = round(max(0.01, min(open_p, close_p) - wick), 2)
+        wick = round_price(max(open_p * 0.0022, intrabody * 0.55))
+        high_p = round_price(max(open_p, close_p) + wick)
+        low_p = round_price(max(base_price * 0.05, min(open_p, close_p) - wick))
 
         vol_multiplier = 2.1 if (285 <= regime_phase < 315 or abs(drift) > 0.006) else 1.0
         volume = round(

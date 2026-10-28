@@ -1,10 +1,17 @@
 import React from 'react';
 import { AlertTriangle, Radio, ShieldAlert, ShieldCheck, Unplug } from 'lucide-react';
-import type { DataProviderType, EngineStatusDTO, RiskProfileType } from '../../shared/types';
+import {
+  SUPPORTED_SPOT_SYMBOLS,
+  type DataProviderType,
+  type EngineStatusDTO,
+  type RiskProfileType,
+  type SpotSymbol,
+} from '../../shared/types';
 import { formatUtcTimestamp, getModeDescriptor } from '../utils/formatters';
 
 interface ModeBannerProps {
   status: EngineStatusDTO;
+  onSelectSymbol: (symbol: SpotSymbol) => void;
   onToggleConnectivity: (connected: boolean) => void;
   onToggleDataProvider: (provider: DataProviderType) => void;
   onChangeRiskProfile: (profile: RiskProfileType) => void;
@@ -14,6 +21,7 @@ interface ModeBannerProps {
 
 export const ModeBanner: React.FC<ModeBannerProps> = ({
   status,
+  onSelectSymbol,
   onToggleConnectivity,
   onToggleDataProvider,
   onChangeRiskProfile,
@@ -63,11 +71,28 @@ export const ModeBanner: React.FC<ModeBannerProps> = ({
 
         <div className="flex flex-wrap items-center gap-3">
           <span className="font-mono text-xs text-slate-400 tabular-nums">
-            Última vela cerrada: {formatUtcTimestamp(status.last_data_timestamp)}
+            Última vela: {formatUtcTimestamp(status.last_data_timestamp)}
           </span>
           <span aria-hidden="true" className="text-slate-600">
             ·
           </span>
+          <label className="inline-flex items-center gap-1.5 text-xs text-slate-300">
+            <span className="font-mono text-slate-400">Moneda:</span>
+            <select
+              aria-label="Moneda Spot activa"
+              disabled={isBusy || !status.python_engine_connected}
+              value={status.primary_symbol}
+              onChange={(e) => onSelectSymbol(e.target.value as SpotSymbol)}
+              className="rounded-md border border-slate-700 bg-slate-900 px-2.5 py-1.5 font-mono text-xs font-semibold text-emerald-300 focus:border-emerald-400 focus:outline-none disabled:opacity-50"
+            >
+              {SUPPORTED_SPOT_SYMBOLS.map((sym) => (
+                <option key={sym} value={sym}>
+                  {sym}
+                </option>
+              ))}
+            </select>
+          </label>
+
           <label className="inline-flex items-center gap-1.5 text-xs text-slate-300">
             <span className="font-mono text-slate-400">Perfil:</span>
             <select
@@ -79,7 +104,7 @@ export const ModeBanner: React.FC<ModeBannerProps> = ({
             >
               <option value="conservative">Conservador (0.5% / Exp 50%)</option>
               <option value="balanced">Moderado (1.25% / Exp 75%)</option>
-              <option value="aggressive">Arriesgado v1.3 (2.0% / Exp 95%)</option>
+              <option value="aggressive">Arriesgado v1.4 (2.0% / Exp 95%)</option>
             </select>
           </label>
 

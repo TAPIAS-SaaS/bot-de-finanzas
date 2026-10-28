@@ -27,6 +27,24 @@ class GeneralConfig:
     sqlite_db_path: str = "./data/bot_finanzas.sqlite"
 
 
+SUPPORTED_SPOT_SYMBOLS: List[str] = [
+    "BTC/USDT",
+    "ETH/USDT",
+    "SOL/USDT",
+    "NEAR/USDT",
+    "INJ/USDT",
+    "SUI/USDT",
+    "FET/USDT",
+    "RENDER/USDT",
+    "AVAX/USDT",
+    "WIF/USDT",
+    "PEPE/USDT",
+    "LINK/USDT",
+    "XRP/USDT",
+    "DOGE/USDT",
+]
+
+
 @dataclass(frozen=True)
 class StrategyConfig:
     active_strategy_id: str = "trend_following_v1"
@@ -40,7 +58,7 @@ class StrategyConfig:
     entry_timeframe: str = "1h"
     trend_timeframe: str = "4h"
     candidate_symbols: List[str] = field(
-        default_factory=lambda: ["BTC/USDT", "ETH/USDT"]
+        default_factory=lambda: list(SUPPORTED_SPOT_SYMBOLS)
     )
 
 

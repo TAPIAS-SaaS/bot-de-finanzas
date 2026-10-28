@@ -135,6 +135,24 @@ class TestStrategies(unittest.TestCase):
             self.assertIn(sig.signal, ("BUY", "SELL", "HOLD"))
             self.assertEqual(sig.strategy_id, strat.strategy_id)
 
+    def test_multi_asset_altcoin_precision_and_backtest(self) -> None:
+        from trading_bot.config import SUPPORTED_SPOT_SYMBOLS, build_risk_config_for_profile
+        from trading_bot.data import round_price
+
+        self.assertEqual(len(SUPPORTED_SPOT_SYMBOLS), 14)
+        self.assertEqual(round_price(0.000005123), 0.00000512)
+        self.assertEqual(round_price(0.0803456), 0.080346)
+        self.assertEqual(round_price(1.33149), 1.3315)
+        self.assertEqual(round_price(71012.345), 71012.35)
+
+        for sym in ("SOL/USDT", "PEPE/USDT", "INJ/USDT", "DOGE/USDT"):
+            c1h, c4h = generate_deterministic_market_series(sym, num_1h_bars=320)
+            rep = run_backtest_for_strategy(
+                "range_breakout_v1", c1h, c4h, build_risk_config_for_profile("aggressive")
+            )
+            self.assertEqual(rep.symbol, sym)
+            self.assertGreaterEqual(rep.final_equity_usdt, rep.initial_equity_usdt)
+
 
 class TestRiskManagerAndSecurity(unittest.TestCase):
     def setUp(self) -> None:

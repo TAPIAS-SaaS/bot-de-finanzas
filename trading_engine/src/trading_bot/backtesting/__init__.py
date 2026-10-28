@@ -17,7 +17,7 @@ from dataclasses import asdict, dataclass
 from typing import Dict, List, Optional
 
 from trading_bot.config import RiskConfig
-from trading_bot.data import Candle
+from trading_bot.data import Candle, round_price
 from trading_bot.risk import PortfolioStateSnapshot, RiskManager
 from trading_bot.strategies import STRATEGY_REGISTRY, BaseStrategy
 
@@ -153,7 +153,7 @@ def run_backtest_for_strategy(
 
         # 1. Ejecutar al OPEN de la vela actual las órdenes decididas al cierre de la vela anterior
         if pending_entry is not None and open_pos is None:
-            fill_price = round(bar.open * (1.0 + risk_config.default_slippage_rate), 2)
+            fill_price = round_price(bar.open * (1.0 + risk_config.default_slippage_rate))
             qty = pending_entry["qty"]
             entry_fee = round(qty * fill_price * risk_config.default_fee_rate, 6)
             total_cost = qty * fill_price + entry_fee
@@ -175,7 +175,7 @@ def run_backtest_for_strategy(
             pending_entry = None
 
         elif pending_exit_signal and open_pos is not None:
-            exit_price = round(bar.open * (1.0 - risk_config.default_slippage_rate), 2)
+            exit_price = round_price(bar.open * (1.0 - risk_config.default_slippage_rate))
             qty = open_pos["qty"]
             exit_fee = round(qty * exit_price * risk_config.default_fee_rate, 6)
             gross_pnl = (exit_price - open_pos["entry_price"]) * qty
@@ -213,7 +213,7 @@ def run_backtest_for_strategy(
             if stop_hit or tp_hit:
                 if stop_hit:
                     raw_exit = min(bar.open, open_pos["stop"])
-                    exit_price = round(raw_exit * (1.0 - risk_config.default_slippage_rate), 2)
+                    exit_price = round_price(raw_exit * (1.0 - risk_config.default_slippage_rate))
                     reason = (
                         "TRAILING_PROFIT_LOCK"
                         if open_pos["stop"] > open_pos["entry_price"]
@@ -221,7 +221,7 @@ def run_backtest_for_strategy(
                     )
                 else:
                     raw_exit = open_pos["tp"]
-                    exit_price = round(raw_exit * (1.0 - risk_config.default_slippage_rate), 2)
+                    exit_price = round_price(raw_exit * (1.0 - risk_config.default_slippage_rate))
                     reason = "TAKE_PROFIT"
 
                 qty = open_pos["qty"]
@@ -258,9 +258,8 @@ def run_backtest_for_strategy(
                 gain_per_unit = open_pos["highest_close"] - open_pos["entry_price"]
                 r_unit = open_pos["risk_r"]
                 if gain_per_unit >= 2.90 * r_unit:
-                    trail_stop = round(
-                        open_pos["entry_price"] + 0.70 * gain_per_unit,
-                        2,
+                    trail_stop = round_price(
+                        open_pos["entry_price"] + 0.70 * gain_per_unit
                     )
                     open_pos["stop"] = max(open_pos["stop"], trail_stop)
 
