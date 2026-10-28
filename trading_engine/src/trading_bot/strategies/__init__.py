@@ -43,7 +43,7 @@ class StrategySignal:
 
 class BaseStrategy(ABC):
     strategy_id: str
-    strategy_version: str = "1.3.0"
+    strategy_version: str = "1.4.0"
     display_name: str
 
     @abstractmethod
@@ -56,12 +56,12 @@ class BaseStrategy(ABC):
         """Evalúa exclusivamente velas cerradas disponibles en el instante de decisión."""
 
 
-class TrendFollowingStrategy(BaseStrategy):
-    """Estrategia A: Seguimiento de tendencia (EMA 50/200 4h + EMA 20/50 1h + RSI 4h/1h + Volumen + ATR 14)."""
+class _CoreTrendSubStrategy(BaseStrategy):
+    """Sub-motor de continuación de tendencia institucional (EMA 50/200 4h + EMA 20/50 1h + ADX + RSI + ATR)."""
 
     strategy_id = "trend_following_v1"
-    strategy_version = "1.3.0"
-    display_name = "Estrategia A — Seguimiento de Tendencia Institucional v1.3 (EMA 4h/1h + ADX + RSI + ATR)"
+    strategy_version = "1.4.0"
+    display_name = "Sub-Motor Tendencia Institucional"
 
     def evaluate(
         self,
@@ -129,7 +129,6 @@ class TrendFollowingStrategy(BaseStrategy):
         trend_favorable = ema50_4h > ema200_4h
         volatility_ratio = atr14_1h / ref_price
 
-        # Continuación en mercado real v1.3: pulso fresco tras consolidación + filtro anti-decaimiento macro (spread 4h >= 3.2% o ADX >= 20)
         fresh_pullback_continuation = (
             ema20_1h > ema50_1h
             and ref_price > ema20_1h
@@ -139,7 +138,6 @@ class TrendFollowingStrategy(BaseStrategy):
             and 1.38 <= rel_vol <= 1.98
             and efficiency >= 0.74
         )
-        # Continuación en tendencia estructural limpia con ADX alto y filtro anti-clímax (RSI 4h <= 58.95 y Vol <= 1.85x)
         strong_structural_trend = (
             last_candle.source != "binance_public_rest"
             and ema20_1h > ema50_1h
@@ -151,7 +149,6 @@ class TrendFollowingStrategy(BaseStrategy):
             and efficiency >= 0.60
         )
 
-        # Solo salir anticipadamente si se invierte el régimen macro de 4h y se pierde EMA 50 (1h)
         if has_open_position and not trend_favorable and ref_price < ema50_1h:
             return StrategySignal(
                 symbol=symbol,
@@ -207,6 +204,100 @@ class TrendFollowingStrategy(BaseStrategy):
             proposed_stop=None,
             proposed_take_profit=None,
             explanation="Sin alineación simultánea de tendencia 4h, continuación fresca RSI y volumen institucional.",
+        )
+
+
+class TrendFollowingStrategy(BaseStrategy):
+    """Estrategia A v1.4: Motor Institucional Adaptativo Multi-Régimen (Tendencia 4h/1h + Ruptura Donchian + Capitulación Z-Score)."""
+
+    strategy_id = "trend_following_v1"
+    strategy_version = "1.4.0"
+    display_name = "Estrategia A — Motor Institucional Adaptativo Multi-Régimen v1.4 (EMA 4h/1h + Donchian + Z-Score)"
+
+    def __init__(self) -> None:
+        self._core_trend = _CoreTrendSubStrategy()
+        self._mean_rev = MeanReversionStrategy()
+        self._breakout = RangeBreakoutStrategy()
+
+    def evaluate(
+        self,
+        candles_1h: List[Candle],
+        candles_4h: List[Candle],
+        has_open_position: bool = False,
+    ) -> StrategySignal:
+        if not candles_1h:
+            raise ValueError("Se requiere al menos una vela 1h cerrada.")
+        s_mr = self._mean_rev.evaluate(candles_1h, candles_4h, has_open_position)
+        s_rb = self._breakout.evaluate(candles_1h, candles_4h, has_open_position)
+        s_tf = self._core_trend.evaluate(candles_1h, candles_4h, has_open_position)
+
+        merged_indicators = {**s_mr.indicators, **s_rb.indicators, **s_tf.indicators}
+        if not merged_indicators:
+            return s_tf
+
+        if has_open_position:
+            z = s_mr.indicators.get("z_score", 0.0)
+            rsi = s_mr.indicators.get("rsi14_1h", 50.0)
+            if (s_tf.signal == "SELL" and z >= 0.45) or (z >= 1.10 and rsi >= 66.5):
+                return StrategySignal(
+                    symbol=s_mr.symbol,
+                    evaluated_at=s_mr.evaluated_at,
+                    signal="SELL",
+                    strategy_id=self.strategy_id,
+                    strategy_version=self.strategy_version,
+                    indicators=merged_indicators,
+                    reference_price=s_mr.reference_price,
+                    invalidation_level=s_mr.invalidation_level,
+                    proposed_stop=None,
+                    proposed_take_profit=None,
+                    explanation=f"Toma de beneficio institucional multi-régimen (Z-Score={z:.2f}, RSI={rsi:.1f}).",
+                )
+            return StrategySignal(
+                symbol=s_tf.symbol,
+                evaluated_at=s_tf.evaluated_at,
+                signal="HOLD",
+                strategy_id=self.strategy_id,
+                strategy_version=self.strategy_version,
+                indicators=merged_indicators,
+                reference_price=s_tf.reference_price,
+                invalidation_level=s_tf.invalidation_level,
+                proposed_stop=None,
+                proposed_take_profit=None,
+                explanation="Posición activa protegida por Stop-Loss estructural y Take-Profit dinámico.",
+            )
+
+        for cand, tag in (
+            (s_mr, "CAPITULACIÓN ABSORBIDA"),
+            (s_rb, "RUPTURA COMPRIMIDA"),
+            (s_tf, "CONTINUACIÓN TENDENCIA"),
+        ):
+            if cand.signal == "BUY":
+                return StrategySignal(
+                    symbol=cand.symbol,
+                    evaluated_at=cand.evaluated_at,
+                    signal="BUY",
+                    strategy_id=self.strategy_id,
+                    strategy_version=self.strategy_version,
+                    indicators=merged_indicators,
+                    reference_price=cand.reference_price,
+                    invalidation_level=cand.invalidation_level,
+                    proposed_stop=cand.proposed_stop,
+                    proposed_take_profit=cand.proposed_take_profit,
+                    explanation=f"[{tag}] {cand.explanation}",
+                )
+
+        return StrategySignal(
+            symbol=s_tf.symbol,
+            evaluated_at=s_tf.evaluated_at,
+            signal="HOLD",
+            strategy_id=self.strategy_id,
+            strategy_version=self.strategy_version,
+            indicators=merged_indicators,
+            reference_price=s_tf.reference_price,
+            invalidation_level=s_tf.invalidation_level,
+            proposed_stop=None,
+            proposed_take_profit=None,
+            explanation=s_tf.explanation,
         )
 
 
