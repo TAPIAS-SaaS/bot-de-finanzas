@@ -45,7 +45,7 @@ def calculate_ema(values: List[float], period: int) -> Optional[float]:
 
 def calculate_atr(candles: List[Candle], period: int = 14) -> Optional[float]:
     """Calcula el Average True Range (ATR) de Wilder sobre velas cerradas."""
-    closed = [c for c in candles if c.is_closed]
+    closed = [c for c in candles[-(period * 12 + 20) :] if c.is_closed]
     if period <= 0 or len(closed) < period + 1:
         return None
     trs: List[float] = []
@@ -84,7 +84,7 @@ def calculate_bollinger_and_zscore(
 
 
 def calculate_relative_volume(candles: List[Candle], period: int = 20) -> Optional[float]:
-    closed = [c for c in candles if c.is_closed]
+    closed = [c for c in candles[-(period + 15) :] if c.is_closed]
     if period <= 0 or len(closed) < period + 1:
         return None
     avg_vol = sum(c.volume for c in closed[-(period + 1) : -1]) / period
@@ -97,7 +97,7 @@ def calculate_donchian_channel(
     candles: List[Candle], lookback: int = 20
 ) -> Optional[Tuple[float, float, float]]:
     """Calcula el canal de máximos/mínimos de las `lookback` velas cerradas ANTERIORES a la vela actual."""
-    closed = [c for c in candles if c.is_closed]
+    closed = [c for c in candles[-(lookback + 15) :] if c.is_closed]
     if lookback <= 0 or len(closed) < lookback + 1:
         return None
     prior_window = closed[-(lookback + 1) : -1]
@@ -111,7 +111,7 @@ def calculate_rsi(closes: List[float], period: int = 14) -> Optional[float]:
     """Calcula el RSI suavizado de Wilder (0 a 100) sobre precios de cierre."""
     if period <= 0 or len(closes) < period + 1:
         return None
-    tail = closes[-(period * 3 + 5) :]
+    tail = closes[-250:]
     gains: List[float] = []
     losses: List[float] = []
     for i in range(1, len(tail)):

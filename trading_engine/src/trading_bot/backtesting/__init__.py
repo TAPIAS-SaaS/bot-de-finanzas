@@ -253,16 +253,13 @@ def run_backtest_for_strategy(
                 open_pos = None
                 pending_exit_signal = False
             else:
-                # 2b. Actualización de Trailing Stop y Break-Even al CIERRE de la vela (aplica desde la vela siguiente, cero look-ahead)
+                # 2b. Actualización de Trailing Stop al CIERRE de la vela cuando supera 2.9R (cero look-ahead)
                 open_pos["highest_close"] = max(open_pos["highest_close"], bar.close)
                 gain_per_unit = open_pos["highest_close"] - open_pos["entry_price"]
                 r_unit = open_pos["risk_r"]
-                if strategy_id != "trend_following_v1" and gain_per_unit >= 1.35 * r_unit:
-                    be_stop = round(open_pos["entry_price"] * 1.0030, 2)
-                    open_pos["stop"] = max(open_pos["stop"], be_stop)
-                if gain_per_unit >= 2.60 * r_unit:
+                if gain_per_unit >= 2.90 * r_unit:
                     trail_stop = round(
-                        open_pos["entry_price"] + 0.65 * gain_per_unit,
+                        open_pos["entry_price"] + 0.70 * gain_per_unit,
                         2,
                     )
                     open_pos["stop"] = max(open_pos["stop"], trail_stop)

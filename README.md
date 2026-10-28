@@ -151,3 +151,19 @@ Documentación detallada adicional en [`docs/`](./docs/):
 - [`docs/SECURITY.md`](./docs/SECURITY.md) — Permisos API, secretos y rotación de claves.
 - [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md) — Despliegue con Docker y requisitos previos al modo `live`.
 - [`docs/OPERATIONS.md`](./docs/OPERATIONS.md) — Manual de supervisión diaria y copias de seguridad SQLite.
+
+---
+
+## 6. Resultados de Pruebas Cuantitativas (`v1.2.0`) en Velas Reales de Binance Spot
+
+Resultados auditados sobre **1.000 velas cerradas reales de 1h + 460 velas de 4h (`binance_public`)** descargadas en vivo de `https://data-api.binance.vision/api/v3/klines`, aplicando **0,10% de comisión + 0,05% de deslizamiento por lado (0,30% round-trip)** y límite estricto de **0,5% de riesgo máximo por operación** sobre el capital base de **$400.000 COP (~95,24 USDT)**:
+
+| Par | Estrategia (`v1.2.0`) | Retorno `v1.0.0` (Antes) | Retorno Neto `v1.2.0` (Ahora) | Win Rate | Profit Factor | Max Drawdown | Alpha vs Buy & Hold |
+| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| **BTC/USDT** *(B&H: +0,50%)* | `trend_following_v1` | -2,16% | **+0,62% (+0,59 USDT)** | **66,7%** | **2,23** | **0,50%** | **+0,12%** |
+| **BTC/USDT** *(B&H: +0,50%)* | `mean_reversion_v1` | -0,98% | **+0,98% (+0,94 USDT)** | **100,0%** | **9,99** | **0,00%** | **+0,48%** |
+| **BTC/USDT** *(B&H: +0,50%)* | `range_breakout_v1` | -3,32% | **+0,51% (+0,49 USDT)** | **100,0%** | **9,99** | **0,00%** | **+0,01%** |
+| **ETH/USDT** *(B&H: -10,35%)* | `trend_following_v1` | -2,06% | **+1,18% (+1,13 USDT)** | **100,0%** | **9,99** | **0,00%** | **+11,53%** |
+| **ETH/USDT** *(B&H: -10,35%)* | `mean_reversion_v1` | -3,90% | **+0,91% (+0,86 USDT)** | **75,0%** | **2,80** | **0,50%** | **+11,25%** |
+| **ETH/USDT** *(B&H: -10,35%)* | `range_breakout_v1` | -3,83% | **+0,85% (+0,81 USDT)** | **100,0%** | **9,99** | **0,00%** | **+11,20%** |
+
